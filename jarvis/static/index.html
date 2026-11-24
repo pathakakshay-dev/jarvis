@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JARVIS</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #121417;
+      --panel: #1c2128;
+      --line: #2c3440;
+      --text: #e7ecf1;
+      --muted: #9aa4b2;
+      --stop: #c2413c;
+      --end: #3d4654;
+      --accent: #d6a24a;
+      --ok: #7dcea0;
+      --error: #e07a5f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.45 "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .safety {
+      position: fixed;
+      inset: 0 0 auto 0;
+      z-index: 20;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 16px;
+      background: #0d0f12;
+      border-bottom: 1px solid var(--line);
+    }
+    button, select, input {
+      font: inherit;
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    button { padding: 8px 12px; cursor: pointer; }
+    #emergency-stop { background: var(--stop); border-color: var(--stop); font-weight: 700; }
+    #end-process { background: var(--end); }
+    #resume { background: transparent; }
+    main { max-width: 820px; margin: 0 auto; padding: 76px 16px 32px; }
+    h1 { font-size: 1.3rem; margin: 0 0 8px; }
+    .banner {
+      min-height: 52px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+    .banner strong { display: block; font-size: 1.05rem; }
+    .banner.stopped strong { color: var(--error); }
+    .banner.unconfirmed strong { color: var(--accent); }
+    .note, .hint { color: var(--muted); margin: 8px 0 0; }
+    .notice { color: var(--accent); }
+    form { display: flex; gap: 8px; margin: 16px 0; }
+    input[type="text"] { flex: 1; padding: 10px 12px; }
+    #send { background: var(--accent); color: #1a1408; border-color: var(--accent); font-weight: 700; }
+    .log, .thread { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .row, .bubble { padding: 10px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+    .bubble.user { border-color: #3d4d34; }
+    .bubble.failed { border-color: var(--error); color: var(--error); }
+    .meta { color: var(--muted); font-size: 0.85rem; }
+    label { color: var(--muted); font-size: 0.9rem; }
+    .provider, .memory-add, .memory-search { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+    .memory { margin-top: 22px; }
+    .memory h2 { font-size: 1rem; margin: 0; }
+    .memory-row { display: flex; gap: 8px; align-items: center; }
+    .memory-row span { flex: 1; }
+    .danger { background: transparent; border-color: var(--error); color: var(--error); }
+    select, #model { padding: 8px; }
+    .voice { margin-top: 14px; }
+    .voice h2 { font-size: 1rem; margin: 0; }
+    .voice-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+    .level { width: 120px; height: 10px; border: 1px solid var(--line); border-radius: 6px; background: #101317; overflow: hidden; }
+    .level span { display: block; height: 100%; width: 0; background: var(--ok); }
+    #ptt { background: var(--accent); color: #1a1408; border-color: var(--accent); font-weight: 700; }
+    #voice-state strong { margin-right: 6px; }
+    #diagnostic-results { margin-top: 8px; }
+    #diagnostic-results strong { display: block; }
+  </style>
+</head>
+<body>
+  <div class="safety">
+    <button id="emergency-stop" type="button">Emergency Stop</button>
+    <button id="end-process" type="button">End process</button>
+    <button id="resume" type="button">Resume</button>
+    <span class="meta" id="hotkey"></span>
+  </div>
+  <main>
+    <h1>JARVIS</h1>
+    <div id="banner" class="banner"><strong>Idle</strong><span>Local assistant. No tools are enabled.</span></div>
+    <p id="notice" class="notice" hidden></p>
+    <section class="voice">
+      <h2>Voice</h2>
+      <p class="hint">The microphone turns on only while Hold to talk is pressed, and for a moment when you press List microphones so the names can be shown. There is no background listening. The clip stays in this page until you press Transcribe clip. Speech is transcribed on this computer with Whisper small. Compare decoding keeps one clip on this computer only after you agree, runs four local decoders, then deletes the clip. Play and new replies use Microsoft Edge TTS, which sends that reply text to Microsoft. If Edge TTS is unavailable, this browser speaks with Windows voices and the text stays here. Mute blocks automatic speech. Resume does not replay speech.</p>
+      <p id="voice-state"><strong>Idle</strong><span>Microphone stays off until you hold the button.</span></p>
+      <div class="voice-controls">
+        <label for="mic-device">Microphone</label>
+        <select id="mic-device"><option value="">Default recording device</option></select>
+        <button id="mic-list" type="button">List microphones</button>
+        <span class="level" title="Input level while holding the button"><span id="mic-level"></span></span>
+        <button id="ptt" type="button">Hold to talk</button>
+        <button id="voice-use" type="button" hidden>Transcribe clip</button>
+        <button id="diagnostic-keep" type="button" hidden>Keep clip for diagnosis</button>
+        <button id="diagnostic-compare" type="button" hidden>Compare decoding</button>
+        <button id="diagnostic-delete" class="danger" type="button" hidden>Delete diagnostic audio</button>
+        <button id="voice-cancel" type="button" hidden>Cancel</button>
+        <audio id="voice-preview" controls hidden></audio>
+        <button id="voice-play" type="button">Play</button>
+        <button id="voice-stop" type="button">Stop voice</button>
+        <label><input id="voice-mute" type="checkbox" checked> Mute</label>
+      </div>
+      <div id="diagnostic-results" class="log"></div>
+    </section>
+    <form id="chat-form">
+      <input id="text" type="text" maxlength="8000" placeholder="Hindi, English, or Hinglish" autocomplete="off">
+      <button id="send" type="submit">Send</button>
+    </form>
+    <div id="thread" class="thread"></div>
+    <section class="memory">
+      <h2>Memories</h2>
+      <p class="hint">Stored facts stay separate from chat. Nothing is saved unless you ask.</p>
+      <form id="memory-search" class="memory-search">
+        <input id="memory-query" type="text" maxlength="80" placeholder="Search memories" autocomplete="off">
+        <button type="submit">Search</button>
+      </form>
+      <button id="memory-show-all" type="button">Show all</button>
+      <p id="memory-note" class="hint"></p>
+      <div id="memory-list" class="log"></div>
+      <form id="memory-add" class="memory-add">
+        <input id="memory-fact" type="text" maxlength="280" placeholder="Add a short fact" autocomplete="off">
+        <button type="submit">Add</button>
+        <button id="memory-clear" class="danger" type="button">Clear all</button>
+      </form>
+    </section>
+    <div class="provider">
+      <label for="provider">Provider</label>
+      <select id="provider"></select>
+      <label for="model">Model</label>
+      <input id="model" type="text" maxlength="80">
+      <button id="apply-provider" type="button">Use</button>
+    </div>
+    <h2 class="meta">Activity</h2>
+    <div id="log" class="log"></div>
+    <p class="hint">If Emergency Stop cannot be confirmed, use End process. If the window is frozen, press Ctrl+Alt+Shift+K, or end Python in Task Manager. Resume does not continue old tasks.</p>
+  </main>
+  <script>
+    const LABELS = {
+      idle: "Idle",
+      listening: "Listening",
+      thinking: "Thinking",
+      planning: "Planning",
+      requesting_approval: "Requesting approval",
+      executing: "Executing a tool",
+      completed: "Completed",
+      error: "Error",
+      stopped: "Stopped"
+    };
+    const CONFIRM_AFTER_MS = 2000;
+    let stopRequestedAt = null;
+    let lastStatus = "idle";
+    let sending = false;
+    let voiceState = "Idle";
+    let voiceGeneration = 0;
+    let recording = false;
+    let holdTalk = false;
+    let discardRecording = false;
+    let voiceDraft = false;
+    let voiceAbort = null;
+    let mediaStream = null;
+    let mediaRecorder = null;
+    let recordChunks = [];
+    let recordTimer = null;
+    let audioEl = null;
+    let latestReply = "";
+    let pendingBlob = null;
+    let pendingGeneration = 0;
+    let previewUrl = null;
+    let micSettings = "";
+    let audioContext = null;
+    let levelTimer = 0;
+    let capturePeak = 0;
+    const MAX_RECORD_MS = 20000;
+
+    function bannerFor(polledStatus, requestedAt, now) {
+      if (requestedAt !== null) {
+        if (polledStatus === "stopped") return "Stopped";
+        if (now - requestedAt >= CONFIRM_AFTER_MS) return "Stop could not be confirmed";
+        return "Stopping";
+      }
+      if (polledStatus === "stopped") return "Stopped";
+      if (!polledStatus) return "Stop could not be confirmed";
+      return LABELS[polledStatus] || polledStatus;
+    }
+
+    function renderBanner(polledStatus) {
+      const banner = document.getElementById("banner");
+      const label = bannerFor(polledStatus, stopRequestedAt, Date.now());
+      if (label === "Stopped") stopRequestedAt = null;
+      const strong = banner.querySelector("strong");
+      strong.textContent = label;
+      banner.classList.toggle("stopped", label === "Stopped");
+      banner.classList.toggle("unconfirmed", label === "Stop could not be confirmed");
+      const detail = banner.querySelector("span");
+      if (label === "Stopping") detail.textContent = "Waiting for the process to confirm the halt.";
+      else if (label === "Stop could not be confirmed") detail.textContent = "The halt was not confirmed. Use End process.";
+      else if (label === "Stopped") detail.textContent = "Halted. Resume does not replay dropped work. Send a new message after Resume.";
+      else if (sending && label !== "Stopped") detail.textContent = "One request is in flight.";
+      else detail.textContent = "Local assistant. No tools are enabled.";
+    }
+
+    async function poll() {
+      let polled = lastStatus;
+      try {
+        const response = await fetch("/api/status");
+        if (response.ok) {
+          const data = await response.json();
+          lastStatus = data.status;
+          polled = data.status;
+          document.getElementById("hotkey").textContent = data.hotkey_note || "";
+          const notice = document.getElementById("notice");
+          notice.hidden = !data.gemini_notice;
+          notice.textContent = data.gemini_notice || "";
+          const provider = document.getElementById("provider");
+          if (provider.options.length === 0 && data.providers) {
+            data.providers.forEach((id) => {
+              const option = document.createElement("option");
+              option.value = id;
+              option.textContent = id;
+              provider.appendChild(option);
+            });
+          }
+          if (document.activeElement !== provider) provider.value = data.provider;
+          const model = document.getElementById("model");
+          if (document.activeElement !== model) model.value = data.model || "";
+          const log = document.getElementById("log");
+          log.replaceChildren();
+          (data.audit || []).slice().reverse().forEach((row) => {
+            const item = document.createElement("div");
+            item.className = "row";
+            const outcome = row.outcome ? " · " + row.outcome : "";
+            const errorType = row.error_type ? " · " + row.error_type : "";
+            item.textContent = (row.status || "") + outcome + errorType + (row.detail ? " — " + row.detail : "");
+            log.appendChild(item);
+          });
+          (data.outcomes || []).forEach((row) => {
+            const item = document.createElement("div");
+            item.className = "row";
+            item.textContent = row.action + " · " + row.outcome;
+            log.appendChild(item);
+          });
+        }
+      } catch (error) {
+        polled = lastStatus;
+      }
+      renderBanner(polled);
+      if (polled === "stopped" || stopRequestedAt !== null) {
+        if (voiceState !== "Stopped") {
+          silenceVoice();
+          setVoice("Stopped", "Voice is stopped. Resume does not replay speech.");
+        }
+      } else if (voiceState === "Stopped") {
+        setVoice("Idle", "Microphone stays off until you hold the button.");
+      }
+    }
+
+    async function loadMessages() {
+      const response = await fetch("/api/messages");
+      if (!response.ok) return;
+      const data = await response.json();
+      const thread = document.getElementById("thread");
+      thread.replaceChildren();
+      (data.messages || []).forEach((message) => {
+        const item = document.createElement("div");
+        item.className = "bubble " + (message.status === "failed" ? "failed" : message.role);
+        item.textContent = message.content;
+        thread.appendChild(item);
+      });
+    }
+
+    document.getElementById("emergency-stop").addEventListener("click", async () => {
+      stopRequestedAt = Date.now();
+      silenceVoice();
+      setVoice("Stopped", "Voice is stopped. Resume does not replay speech.");
+      renderBanner(lastStatus);
+      try {
+        await fetch("/api/emergency-stop", { method: "POST" });
+      } catch (error) {
+        /* The next poll reports an unconfirmed stop if the process does not answer. */
+      }
+      await poll();
+    });
+
+    document.getElementById("end-process").addEventListener("click", async () => {
+      if (!window.confirm("End the JARVIS process now?")) return;
+      try {
+        await fetch("/api/quit", { method: "POST" });
+      } catch (error) {
+        renderBanner(null);
+      }
+    });
+
+    document.getElementById("resume").addEventListener("click", async () => {
+      await fetch("/api/resume", { method: "POST" });
+      stopRequestedAt = null;
+      if (voiceState === "Stopped") setVoice("Idle", "Microphone stays off until you hold the button.");
+      await poll();
+    });
+
+    document.getElementById("chat-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("text");
+      const text = input.value.trim();
+      if (!text || sending) return;
+      sending = true;
+      voiceDraft = false;
+      document.getElementById("voice-cancel").hidden = voiceState !== "Recording" && voiceState !== "Processing";
+      renderBanner(lastStatus);
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        const data = await response.json().catch(() => ({}));
+        input.value = "";
+        await loadMessages();
+        await loadMemories();
+        if (response.ok && data.status === "completed" && data.text && !document.getElementById("voice-mute").checked && voiceState !== "Stopped" && lastStatus !== "stopped") {
+          latestReply = data.text;
+          speakText(data.text);
+        }
+      } finally {
+        sending = false;
+        await poll();
+      }
+    });
+
+    document.getElementById("apply-provider").addEventListener("click", async () => {
+      const provider = document.getElementById("provider").value;
+      const model = document.getElementById("model").value.trim();
+      const response = await fetch("/api/provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, model: model || null })
+      });
+      const data = await response.json();
+      const notice = document.getElementById("notice");
+      notice.hidden = !data.notice;
+      notice.textContent = data.notice || "";
+      await poll();
+    });
+
+    function memoryItems(rows) {
+      const list = document.getElementById("memory-list");
+      list.replaceChildren();
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "row";
+        empty.textContent = "No stored memories.";
+        list.appendChild(empty);
+        return;
+      }
+      rows.forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row memory-row";
+        const text = document.createElement("span");
+        text.textContent = row.id + ". " + row.fact;
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.textContent = "Edit";
+        edit.addEventListener("click", async () => {
+          const next = window.prompt("Correct this stored fact", row.fact);
+          if (next === null) return;
+          const response = await fetch("/api/memories/" + row.id, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fact: next })
+          });
+          if (!response.ok) window.alert((await response.json()).detail || "Edit failed.");
+          await loadMemories();
+        });
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "danger";
+        remove.textContent = "Delete";
+        remove.addEventListener("click", async () => {
+          if (!window.confirm("Delete memory " + row.id + "?")) return;
+          const response = await fetch("/api/memories/" + row.id + "/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: true })
+          });
+          if (!response.ok) window.alert((await response.json()).detail || "Delete failed.");
+          await loadMemories();
+        });
+        item.append(text, edit, remove);
+        list.appendChild(item);
+      });
+    }
+
+    async function loadMemories(query) {
+      const suffix = query ? "?q=" + encodeURIComponent(query) : "";
+      const response = await fetch("/api/memories" + suffix);
+      if (!response.ok) return;
+      const data = await response.json();
+      const note = document.getElementById("memory-note");
+      const matches = data.memories || [];
+      if (query && matches.length === 0 && data.total > 0) {
+        note.textContent = "No memories match that search. " + data.total + " saved memories are still stored.";
+        const all = await fetch("/api/memories");
+        if (!all.ok) return;
+        memoryItems((await all.json()).memories || []);
+        return;
+      }
+      note.textContent = "";
+      memoryItems(matches);
+    }
+
+    document.getElementById("memory-add").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("memory-fact");
+      const response = await fetch("/api/memories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fact: input.value })
+      });
+      if (!response.ok) {
+        window.alert((await response.json()).detail || "Could not save that memory.");
+        return;
+      }
+      input.value = "";
+      await loadMemories();
+    });
+
+    document.getElementById("memory-search").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await loadMemories(document.getElementById("memory-query").value.trim());
+    });
+
+    document.getElementById("memory-show-all").addEventListener("click", async () => {
+      document.getElementById("memory-query").value = "";
+      await loadMemories();
+    });
+
+    document.getElementById("memory-clear").addEventListener("click", async () => {
+      const phrase = window.prompt('Type "clear all memories" to delete every saved fact. This cannot be undone.');
+      if (phrase === null || phrase.trim().toLowerCase() !== "clear all memories") {
+        window.alert("Memories were not cleared.");
+        return;
+      }
+      const response = await fetch("/api/memories/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true, phrase: phrase.trim() })
+      });
+      if (!response.ok) window.alert((await response.json()).detail || "Clear failed.");
+      await loadMemories();
+    });
+
+    function setVoice(state, detail) {
+      voiceState = state;
+      const node = document.getElementById("voice-state");
+      node.querySelector("strong").textContent = state;
+      node.querySelector("span").textContent = detail || "";
+      const showCancel = state === "Recording" || state === "Processing" || pendingBlob !== null || (voiceDraft && state === "Idle");
+      document.getElementById("voice-cancel").hidden = !showCancel;
+    }
+
+    function audioSummary(measurement) {
+      if (!measurement) return "";
+      if (measurement.error) return "Audio measurement failed (" + measurement.error + ").";
+      return "Decoded " + measurement.decoded_seconds + "s at " + measurement.sample_rate + " Hz, " + measurement.channels + " ch, " + (measurement.codec || "unknown") + ", peak " + measurement.peak + ", silence " + measurement.silence + ".";
+    }
+
+    function clearPreview() {
+      pendingBlob = null;
+      const player = document.getElementById("voice-preview");
+      if (player) {
+        player.pause();
+        player.removeAttribute("src");
+        player.hidden = true;
+      }
+      const use = document.getElementById("voice-use");
+      if (use) use.hidden = true;
+      const keep = document.getElementById("diagnostic-keep");
+      if (keep) keep.hidden = true;
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+      }
+    }
+
+    function captureConstraints() {
+      const audio = {
+        channelCount: { ideal: 1 },
+        sampleRate: { ideal: 48000 },
+        echoCancellation: false,
+        noiseSuppression: true,
+        autoGainControl: true
+      };
+      const chosen = document.getElementById("mic-device").value;
+      if (chosen) audio.deviceId = { exact: chosen };
+      return { audio };
+    }
+
+    function stopLevel() {
+      if (levelTimer) cancelAnimationFrame(levelTimer);
+      levelTimer = 0;
+      const bar = document.getElementById("mic-level");
+      if (bar) bar.style.width = "0";
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+    }
+
+    function startLevel(stream) {
+      stopLevel();
+      capturePeak = 0;
+      const Context = window.AudioContext || window.webkitAudioContext;
+      if (!Context) return;
+      audioContext = new Context();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      source.connect(analyser);
+      const samples = new Uint8Array(analyser.fftSize);
+      const bar = document.getElementById("mic-level");
+      const tick = () => {
+        if (!recording) return;
+        analyser.getByteTimeDomainData(samples);
+        let peak = 0;
+        for (let index = 0; index < samples.length; index += 1) {
+          const value = Math.abs(samples[index] - 128) / 128;
+          if (value > peak) peak = value;
+        }
+        if (peak > capturePeak) capturePeak = peak;
+        bar.style.width = Math.min(100, Math.round(peak * 100)) + "%";
+        levelTimer = requestAnimationFrame(tick);
+      };
+      levelTimer = requestAnimationFrame(tick);
+    }
+
+    async function refreshMics() {
+      if (recording || holdTalk) return;
+      const select = document.getElementById("mic-device");
+      const previous = select.value;
+      let named = false;
+      try {
+        const listed = await navigator.mediaDevices.enumerateDevices();
+        named = listed.some((item) => item.kind === "audioinput" && item.label);
+      } catch (error) {
+        named = false;
+      }
+      if (!named) {
+        let probe = null;
+        try {
+          probe = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false } });
+        } catch (error) {
+          setVoice("Error", micError(error));
+          return;
+        }
+        probe.getTracks().forEach((track) => track.stop());
+      }
+      const found = await navigator.mediaDevices.enumerateDevices();
+      select.replaceChildren();
+      const fallback = document.createElement("option");
+      fallback.value = "";
+      fallback.textContent = "Default recording device";
+      select.appendChild(fallback);
+      found.filter((item) => item.kind === "audioinput").forEach((item, index) => {
+        const option = document.createElement("option");
+        option.value = item.deviceId;
+        option.textContent = item.label || ("Microphone " + (index + 1));
+        select.appendChild(option);
+      });
+      if (previous && Array.from(select.options).some((option) => option.value === previous)) {
+        select.value = previous;
+      }
+    }
+
+    function releaseMicrophone() {
+      if (recordTimer !== null) {
+        clearTimeout(recordTimer);
+        recordTimer = null;
+      }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        mediaStream = null;
+      }
+      stopLevel();
+    }
+
+    function stopPlayback() {
+      if (audioEl) {
+        audioEl.pause();
+        if (audioEl.dataset.url) URL.revokeObjectURL(audioEl.dataset.url);
+        audioEl = null;
+      }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    }
+
+    function silenceVoice() {
+      voiceGeneration += 1;
+      holdTalk = false;
+      discardRecording = true;
+      if (voiceAbort) {
+        voiceAbort.abort();
+        voiceAbort = null;
+      }
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        try { mediaRecorder.stop(); } catch (error) { /* The recorder may already be closed. */ }
+      }
+      recording = false;
+      releaseMicrophone();
+      clearPreview();
+      stopPlayback();
+      discardDiagnosticAudio();
+    }
+
+    function micError(error) {
+      const name = error && error.name;
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        return "Microphone permission was denied. Allow the microphone for this page, then hold the button again.";
+      }
+      if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        return "No microphone was found.";
+      }
+      return "The microphone could not be opened.";
+    }
+
+    async function startRecording(event) {
+      if (event && event.button !== undefined && event.button !== 0) return;
+      if (lastStatus === "stopped" || stopRequestedAt !== null || voiceState === "Stopped") {
+        setVoice("Stopped", "Voice is stopped. Resume does not replay speech.");
+        return;
+      }
+      if (recording || holdTalk) return;
+      holdTalk = true;
+      discardRecording = false;
+      const generation = ++voiceGeneration;
+      setVoice("Recording", "Microphone is on only while this button is held.");
+      const devices = navigator.mediaDevices;
+      if (!devices || !devices.getUserMedia) {
+        holdTalk = false;
+        setVoice("Error", "This page cannot use the microphone.");
+        return;
+      }
+      let stream;
+      try {
+        stream = await devices.getUserMedia(captureConstraints());
+      } catch (error) {
+        holdTalk = false;
+        setVoice("Error", micError(error));
+        return;
+      }
+      if (!holdTalk || generation !== voiceGeneration || lastStatus === "stopped") {
+        stream.getTracks().forEach((track) => track.stop());
+        if (voiceState !== "Stopped") setVoice("Idle", "Hold the button while you speak.");
+        return;
+      }
+      mediaStream = stream;
+      const track = stream.getAudioTracks()[0];
+      const applied = track && track.getSettings ? track.getSettings() : {};
+      micSettings = (track && track.label ? track.label : "Default recording device") + ", " + (applied.sampleRate || "unknown") + " Hz, " + (applied.channelCount || "?") + " ch, echo " + applied.echoCancellation + ", noise " + applied.noiseSuppression + ", gain " + applied.autoGainControl + ".";
+      setVoice("Recording", "Microphone is on only while this button is held. " + micSettings);
+      startLevel(stream);
+      recordChunks = [];
+      const supported = window.MediaRecorder && MediaRecorder.isTypeSupported
+        ? MediaRecorder.isTypeSupported.bind(MediaRecorder)
+        : null;
+      let options = {};
+      if (supported && supported("audio/webm;codecs=opus")) {
+        options = { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 128000 };
+      } else if (supported && supported("audio/webm")) {
+        options = { mimeType: "audio/webm", audioBitsPerSecond: 128000 };
+      }
+      try {
+        mediaRecorder = new MediaRecorder(stream, options);
+      } catch (error) {
+        try {
+          mediaRecorder = new MediaRecorder(stream);
+        } catch (second) {
+          releaseMicrophone();
+          holdTalk = false;
+          setVoice("Error", "The microphone could not be opened.");
+          return;
+        }
+      }
+      mediaRecorder.ondataavailable = (item) => {
+        if (item.data && item.data.size) recordChunks.push(item.data);
+      };
+      mediaRecorder.onstop = () => finishRecording(generation);
+      mediaRecorder.start();
+      recording = true;
+      recordTimer = setTimeout(() => {
+        if (recording && generation === voiceGeneration) stopRecording();
+      }, MAX_RECORD_MS);
+    }
+
+    function stopRecording() {
+      holdTalk = false;
+      if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+      else if (!recording && voiceState === "Recording") setVoice("Idle", "Hold the button while you speak.");
+    }
+
+    function finishRecording(generation) {
+      const recorderMime = mediaRecorder && mediaRecorder.mimeType;
+      const peak = capturePeak;
+      recording = false;
+      releaseMicrophone();
+      const discarded = discardRecording || generation !== voiceGeneration || lastStatus === "stopped";
+      discardRecording = false;
+      const blob = new Blob(recordChunks, { type: "audio/webm" });
+      recordChunks = [];
+      mediaRecorder = null;
+      if (discarded) {
+        if (voiceState !== "Stopped") setVoice("Idle", "Recording discarded.");
+        return;
+      }
+      if (!blob.size) {
+        setVoice("Error", "No audio was captured.");
+        return;
+      }
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(blob);
+      const player = document.getElementById("voice-preview");
+      player.src = previewUrl;
+      player.hidden = false;
+      pendingBlob = blob;
+      pendingGeneration = generation;
+      document.getElementById("voice-use").hidden = false;
+      document.getElementById("diagnostic-keep").hidden = false;
+      const quiet = peak < 0.08 ? " Peak is very low. Choose another microphone or speak closer." : "";
+      setVoice("Idle", "Listen before transcribing. " + (recorderMime || "audio/webm") + ", peak " + peak.toFixed(2) + ". " + micSettings + quiet);
+    }
+
+    document.getElementById("voice-use").addEventListener("click", () => {
+      if (!pendingBlob || lastStatus === "stopped") return;
+      const blob = pendingBlob;
+      const generation = pendingGeneration;
+      document.getElementById("voice-use").hidden = true;
+      sendAudio(blob, generation);
+    });
+
+    function hideDiagnosticActions() {
+      document.getElementById("diagnostic-compare").hidden = true;
+      document.getElementById("diagnostic-delete").hidden = true;
+    }
+
+    function discardDiagnosticAudio() {
+      fetch("/api/voice/diagnostic", { method: "DELETE" }).catch(() => {});
+      hideDiagnosticActions();
+    }
+
+    function renderDiagnostic(data) {
+      const root = document.getElementById("diagnostic-results");
+      root.replaceChildren();
+      const note = document.createElement("p");
+      note.className = "hint";
+      note.textContent = data.notice || "";
+      root.appendChild(note);
+      (data.runs || []).forEach((run) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        const title = document.createElement("strong");
+        title.textContent = run.id + ". " + run.label;
+        const transcript = document.createElement("div");
+        transcript.textContent = run.error || run.text || "(empty)";
+        const settings = run.settings || {};
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const probability = run.detected_probability === null || run.detected_probability === undefined
+          ? "unknown"
+          : run.detected_probability;
+        meta.textContent = "Detected " + (run.detected_language || "unknown")
+          + " (" + probability + "). Language " + (settings.language || "automatic")
+          + ", hint " + (settings.hotwords || "none")
+          + ", beam " + settings.beam_size
+          + ", silence filter " + (settings.vad_filter ? "on" : "off")
+          + ", previous-text " + settings.condition_on_previous_text
+          + ". " + run.elapsed_s + "s.";
+        item.append(title, transcript, meta);
+        root.appendChild(item);
+      });
+    }
+
+    document.getElementById("diagnostic-keep").addEventListener("click", async () => {
+      if (!pendingBlob || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const agreed = window.confirm("Keep this recording on this computer only for a diagnostic comparison? It is not sent to an external service. It is deleted when the comparison finishes, or when you press Delete diagnostic audio.");
+      if (!agreed) return;
+      const blob = pendingBlob;
+      try {
+        const response = await fetch("/api/voice/diagnostic", {
+          method: "POST",
+          headers: {
+            "Content-Type": blob.type || "audio/webm",
+            "X-Jarvis-Diagnostic-Consent": "keep-local"
+          },
+          body: blob
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          setVoice("Error", data.detail || "The clip was not kept.");
+          return;
+        }
+        document.getElementById("diagnostic-compare").hidden = false;
+        document.getElementById("diagnostic-delete").hidden = false;
+        setVoice("Idle", data.notice || "Kept on this computer for diagnosis.");
+      } catch (error) {
+        setVoice("Error", "The clip was not kept.");
+      }
+    });
+
+    document.getElementById("diagnostic-delete").addEventListener("click", async () => {
+      if (voiceAbort) {
+        voiceAbort.abort();
+        try { await fetch("/api/voice/stop", { method: "POST" }); } catch (error) { /* The comparison is already stopping. */ }
+      }
+      try { await fetch("/api/voice/diagnostic", { method: "DELETE" }); } catch (error) { /* The button still hides the stored state. */ }
+      hideDiagnosticActions();
+      if (lastStatus !== "stopped" && voiceState !== "Stopped") {
+        setVoice("Idle", "Diagnostic audio deleted.");
+      }
+    });
+
+    document.getElementById("diagnostic-compare").addEventListener("click", () => {
+      compareDiagnostic();
+    });
+
+    async function compareDiagnostic() {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) {
+        setVoice("Stopped", "Voice is stopped. Resume does not replay speech.");
+        return;
+      }
+      const generation = voiceGeneration;
+      setVoice("Processing", "Comparing four local decoders. This can take a few minutes. The clip stays on this computer and is deleted when the comparison finishes.");
+      voiceAbort = new AbortController();
+      try {
+        const response = await fetch("/api/voice/diagnostic/compare", {
+          method: "POST",
+          signal: voiceAbort.signal
+        });
+        const data = await response.json().catch(() => ({}));
+        if (generation !== voiceGeneration || lastStatus === "stopped") {
+          if (voiceState !== "Stopped") setVoice("Idle", "Diagnostic comparison discarded.");
+          return;
+        }
+        if (!response.ok) {
+          setVoice("Error", data.detail || "The comparison could not be completed.");
+          return;
+        }
+        renderDiagnostic(data);
+        hideDiagnosticActions();
+        setVoice("Idle", "Comparison finished. The diagnostic recording was deleted.");
+      } catch (error) {
+        if (error && error.name === "AbortError") {
+          if (voiceState !== "Stopped") setVoice("Idle", "Diagnostic comparison discarded.");
+          return;
+        }
+        setVoice("Error", "The comparison could not be completed.");
+      } finally {
+        voiceAbort = null;
+      }
+    }
+
+    async function refreshDiagnostic() {
+      try {
+        const response = await fetch("/api/voice/diagnostic");
+        if (!response.ok) return;
+        const data = await response.json();
+        const stored = Boolean(data.stored);
+        document.getElementById("diagnostic-compare").hidden = !stored;
+        document.getElementById("diagnostic-delete").hidden = !stored;
+      } catch (error) {
+        /* A missing status does not turn the microphone on. */
+      }
+    }
+
+    async function sendAudio(blob, generation) {
+      setVoice("Processing", "Transcribing on this computer.");
+      voiceAbort = new AbortController();
+      try {
+        const response = await fetch("/api/voice/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": blob.type || "audio/webm" },
+          body: blob,
+          signal: voiceAbort.signal
+        });
+        const data = await response.json().catch(() => ({}));
+        if (generation !== voiceGeneration || lastStatus === "stopped") {
+          if (voiceState !== "Stopped") setVoice("Idle", "Recording discarded.");
+          return;
+        }
+        if (!response.ok) {
+          if (response.status === 504 && pendingBlob) {
+            document.getElementById("voice-use").hidden = false;
+          }
+          setVoice("Error", data.detail || "Speech could not be transcribed.");
+          return;
+        }
+        const text = (data.text || "").trim();
+        if (!text) {
+          setVoice("Error", "No speech was heard. " + audioSummary(data.audio));
+          return;
+        }
+        document.getElementById("text").value = text;
+        voiceDraft = true;
+        setVoice("Idle", "Transcript is in the message box. Send it, edit it, or cancel. " + audioSummary(data.audio));
+      } catch (error) {
+        if (error && error.name === "AbortError") {
+          if (voiceState !== "Stopped") setVoice("Idle", "Recording discarded.");
+          return;
+        }
+        setVoice("Error", "Speech could not be transcribed.");
+      } finally {
+        voiceAbort = null;
+      }
+    }
+
+    function cancelVoiceDraft() {
+      silenceVoice();
+      if (voiceDraft) document.getElementById("text").value = "";
+      voiceDraft = false;
+      fetch("/api/voice/stop", { method: "POST" }).catch(() => {});
+      if (lastStatus === "stopped") setVoice("Stopped", "Voice is stopped. Resume does not replay speech.");
+      else setVoice("Idle", "Recording discarded.");
+    }
+
+    function lastAssistantReply() {
+      const bubbles = document.querySelectorAll("#thread .bubble");
+      for (let index = bubbles.length - 1; index >= 0; index -= 1) {
+        const item = bubbles[index];
+        if (!item.classList.contains("user") && !item.classList.contains("failed")) return item.textContent || "";
+      }
+      return "";
+    }
+
+    async function speakText(text) {
+      if (!text || lastStatus === "stopped" || voiceState === "Stopped" || stopRequestedAt !== null) {
+        setVoice("Stopped", "Voice is stopped. Resume does not replay speech.");
+        return;
+      }
+      stopPlayback();
+      const generation = ++voiceGeneration;
+      setVoice("Speaking", "Speaking the latest reply.");
+      try {
+        const response = await fetch("/api/voice/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        if (generation !== voiceGeneration || lastStatus === "stopped") {
+          setVoice(lastStatus === "stopped" ? "Stopped" : "Idle", "Speech was cancelled.");
+          return;
+        }
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          setVoice("Error", data.detail || "The reply could not be spoken.");
+          return;
+        }
+        const type = response.headers.get("content-type") || "";
+        if (type.indexOf("audio") !== -1) {
+          const blob = await response.blob();
+          if (generation !== voiceGeneration || lastStatus === "stopped") {
+            setVoice(lastStatus === "stopped" ? "Stopped" : "Idle", "Speech was cancelled.");
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          audioEl = new Audio(url);
+          audioEl.dataset.url = url;
+          audioEl.onended = () => {
+            URL.revokeObjectURL(url);
+            if (voiceState === "Speaking" && generation === voiceGeneration) {
+              setVoice("Idle", "Microphone stays off until you hold the button.");
+            }
+          };
+          await audioEl.play();
+          return;
+        }
+        const data = await response.json();
+        if (data.engine === "sapi" && window.speechSynthesis) {
+          const utterance = new SpeechSynthesisUtterance(data.text || text);
+          utterance.lang = /[\u0900-\u097F]/.test(utterance.text) ? "hi-IN" : "en-US";
+          utterance.onend = () => {
+            if (voiceState === "Speaking" && generation === voiceGeneration) {
+              setVoice("Idle", "Microphone stays off until you hold the button.");
+            }
+          };
+          utterance.onerror = () => setVoice("Error", "Windows speech could not play the reply.");
+          window.speechSynthesis.speak(utterance);
+          return;
+        }
+        setVoice("Error", "Voice output is unavailable.");
+      } catch (error) {
+        if (voiceState !== "Stopped") setVoice("Error", "The reply could not be spoken.");
+      }
+    }
+
+    document.getElementById("mic-list").addEventListener("click", () => {
+      refreshMics();
+    });
+
+    const talkButton = document.getElementById("ptt");
+    talkButton.addEventListener("pointerdown", (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      event.preventDefault();
+      try { talkButton.setPointerCapture(event.pointerId); } catch (error) { /* Capture is optional. */ }
+      startRecording(event);
+    });
+    talkButton.addEventListener("pointerup", stopRecording);
+    talkButton.addEventListener("pointercancel", () => {
+      discardRecording = true;
+      stopRecording();
+    });
+    document.getElementById("voice-cancel").addEventListener("click", cancelVoiceDraft);
+    document.getElementById("voice-stop").addEventListener("click", async () => {
+      silenceVoice();
+      voiceDraft = false;
+      try { await fetch("/api/voice/stop", { method: "POST" }); } catch (error) { /* Playback is already stopped locally. */ }
+      setVoice(lastStatus === "stopped" ? "Stopped" : "Idle", "Speech was stopped. It will not be replayed.");
+    });
+    document.getElementById("voice-play").addEventListener("click", () => {
+      if (lastStatus === "stopped" || voiceState === "Stopped") {
+        setVoice("Stopped", "Voice is stopped. Resume does not replay speech.");
+        return;
+      }
+      const text = latestReply || lastAssistantReply();
+      if (!text) {
+        setVoice("Error", "There is no reply to play.");
+        return;
+      }
+      speakText(text);
+    });
+
+    loadMessages();
+    loadMemories();
+    refreshDiagnostic();
+    poll();
+    setInterval(poll, 1000);
+  </script>
+</body>
+</html>
