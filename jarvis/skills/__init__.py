@@ -1,1 +1,1 @@
-"""Skill package. The app starts with an empty registry."""
+"""Skill package. Registration does not enable a skill."""

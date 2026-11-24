@@ -48,6 +48,13 @@ def _voice_timeout(value: str) -> float:
     return min(_positive_float(value, 180), 180)
 
 
+def _search_provider(value: str) -> str:
+    choice = (value or "tavily").strip().lower()
+    if choice in {"tavily", "brave"}:
+        return choice
+    return "tavily"
+
+
 def _whisper_device(value: str) -> str:
     choice = (value or "auto").strip().lower()
     if choice in {"auto", "cpu", "cuda"}:
@@ -82,6 +89,8 @@ class Settings:
     voice_timeout_s: float = 180
     whisper_model: str = "small"
     whisper_device: str = "auto"
+    brave_api_key: str = ""
+    search_provider: str = "tavily"
 
 
 def load_settings(root: Path | None = None, environ: dict[str, str] | None = None) -> Settings:
@@ -109,4 +118,6 @@ def load_settings(root: Path | None = None, environ: dict[str, str] | None = Non
         voice_timeout_s=_voice_timeout(merged.get("JARVIS_VOICE_TIMEOUT_S", "180")),
         whisper_model="small",
         whisper_device=_whisper_device(merged.get("JARVIS_WHISPER_DEVICE", "auto")),
+        brave_api_key=merged.get("JARVIS_BRAVE_API_KEY", "").strip(),
+        search_provider=_search_provider(merged.get("JARVIS_SEARCH_PROVIDER", "tavily")),
     )

@@ -12,7 +12,10 @@ SHELL_IDS = frozenset({"shell", "cmd", "powershell", "exec", "command", "bash"})
 
 class Permission(str, Enum):
     READ = "read"
+    LIST = "list"
+    SEARCH = "search"
     WRITE = "write"
+    FOLDER = "folder"
     DELETE = "delete"
     SEND = "send"
     APP_CONTROL = "app_control"
@@ -22,6 +25,7 @@ class Permission(str, Enum):
 SENSITIVE = frozenset(
     {
         Permission.WRITE,
+        Permission.FOLDER,
         Permission.DELETE,
         Permission.SEND,
         Permission.APP_CONTROL,

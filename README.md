@@ -37,6 +37,10 @@ The first transcription downloads Whisper small (`Systran/faster-whisper-small`,
 
 **Compare decoding** is a separate diagnostic. After you record and listen, press **Keep clip for diagnosis** and agree. That stores one clip under `data/diagnostic` on this computer. **Compare decoding** then runs that same clip through the current decoder and three alternatives, shows each transcript, and deletes the clip. **Delete diagnostic audio** removes it sooner. Emergency Stop and Cancel delete it as well. A leftover clip is deleted the next time the app starts. The comparison does not change the normal Transcribe clip decoder.
 
+## Web research
+
+Press **Research**, or start a message with `research:`. A normal **Send** does not search. `JARVIS_SEARCH_PROVIDER` chooses the search call. `tavily` is the default and needs no key. `brave` uses `JARVIS_BRAVE_API_KEY`. Either way, JARVIS then reads up to three public HTTPS pages and does not invent sources. Page text is treated as data. Emergency Stop cancels the search, and Resume does not run it again.
+
 ## Stop
 
 - Emergency Stop is always on the page. The banner says Stopped only after the app confirms the halt.

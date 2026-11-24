@@ -64,10 +64,28 @@
     form { display: flex; gap: 8px; margin: 16px 0; }
     input[type="text"] { flex: 1; padding: 10px 12px; }
     #send { background: var(--accent); color: #1a1408; border-color: var(--accent); font-weight: 700; }
+    #research { background: transparent; }
+    a { color: var(--accent); }
     .log, .thread { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
     .row, .bubble { padding: 10px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
     .bubble.user { border-color: #3d4d34; }
     .bubble.failed { border-color: var(--error); color: var(--error); }
+    .bubble p { margin: 0.35em 0; }
+    .bubble p:first-child, .bubble h1:first-child, .bubble h2:first-child, .bubble h3:first-child,
+    .bubble h4:first-child, .bubble h5:first-child, .bubble h6:first-child { margin-top: 0; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble h1, .bubble h2, .bubble h3, .bubble h4, .bubble h5, .bubble h6 {
+      font-size: 1.05rem;
+      line-height: 1.3;
+      margin: 0.7em 0 0.3em;
+    }
+    .bubble ul, .bubble ol { margin: 0.3em 0 0.3em 1.2em; padding: 0; }
+    .bubble li { margin: 0.15em 0; }
+    .bubble .table-wrap { overflow-x: auto; margin: 0.5em 0; }
+    .bubble table { border-collapse: collapse; min-width: 100%; }
+    .bubble th, .bubble td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: top; text-align: left; }
+    .bubble th { font-weight: 700; }
+    .bubble code { font-family: Consolas, "Courier New", monospace; font-size: 0.9em; }
     .meta { color: var(--muted); font-size: 0.85rem; }
     label { color: var(--muted); font-size: 0.9rem; }
     .provider, .memory-add, .memory-search { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
@@ -86,6 +104,22 @@
     #voice-state strong { margin-right: 6px; }
     #diagnostic-results { margin-top: 8px; }
     #diagnostic-results strong { display: block; }
+    .files { margin-top: 22px; }
+    .files h2 { font-size: 1rem; margin: 0; }
+    .file-request { display: flex; gap: 8px; margin-top: 8px; }
+    .file-request input { flex: 1; padding: 10px 12px; }
+    .write-form { flex-wrap: wrap; }
+    .write-form textarea { flex: 1 1 100%; min-height: 72px; padding: 10px 12px; }
+    .file-actions { display: flex; gap: 8px; align-items: center; }
+    .file-actions span { flex: 1; }
+    .file-result {
+      margin-top: 8px;
+      min-height: 48px;
+      max-height: 280px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
   </style>
 </head>
 <body>
@@ -124,8 +158,78 @@
     <form id="chat-form">
       <input id="text" type="text" maxlength="8000" placeholder="Hindi, English, or Hinglish" autocomplete="off">
       <button id="send" type="submit">Send</button>
+      <button id="research" type="button">Research</button>
     </form>
+    <p class="hint">Send uses the model only. Research searches the web for this message, or you can start it with research:.</p>
     <div id="thread" class="thread"></div>
+    <section class="files">
+      <h2>Files</h2>
+      <p class="hint">Read File opens one .txt or .md file from the workspace, up to 100 KB. Each file needs its own approval. The text is shown as data, not as an instruction.</p>
+      <p id="file-permission" class="hint">Read File is off.</p>
+      <div class="voice-controls">
+        <button id="file-permission-on" type="button">Enable Read File</button>
+        <button id="file-permission-off" type="button">Disable Read File</button>
+      </div>
+      <form id="file-form" class="file-request">
+        <input id="file-path" type="text" maxlength="240" placeholder="note.txt" autocomplete="off">
+        <button type="submit">Request read</button>
+      </form>
+      <div id="file-pending" class="log"></div>
+      <pre id="file-result" class="bubble file-result"></pre>
+      <h2>List Files</h2>
+      <p class="hint">List Files shows the names in one workspace folder. It does not open those files. Leave the folder blank to list the workspace root. Each listing needs its own approval.</p>
+      <p id="list-permission" class="hint">List Files is off.</p>
+      <div class="voice-controls">
+        <button id="list-permission-on" type="button">Enable List Files</button>
+        <button id="list-permission-off" type="button">Disable List Files</button>
+      </div>
+      <form id="list-form" class="file-request">
+        <input id="list-path" type="text" maxlength="240" placeholder="folder, or empty for the workspace root" autocomplete="off">
+        <button type="submit">Request listing</button>
+      </form>
+      <div id="list-pending" class="log"></div>
+      <pre id="list-result" class="bubble file-result"></pre>
+      <h2>Search Files</h2>
+      <p class="hint">Search Files looks for a filename inside the workspace. It does not open files. Each search needs its own approval.</p>
+      <p id="search-permission" class="hint">Search Files is off.</p>
+      <div class="voice-controls">
+        <button id="search-permission-on" type="button">Enable Search Files</button>
+        <button id="search-permission-off" type="button">Disable Search Files</button>
+      </div>
+      <form id="search-form" class="file-request">
+        <input id="search-query" type="text" maxlength="80" placeholder="filename" autocomplete="off">
+        <button type="submit">Request search</button>
+      </form>
+      <div id="search-pending" class="log"></div>
+      <pre id="search-result" class="bubble file-result"></pre>
+      <h2>Write File</h2>
+      <p class="hint">Write File creates or replaces one .txt or .md file in the workspace, up to 100 KB. An existing file is shown as an overwrite and is not changed until that exact write is approved.</p>
+      <p id="write-permission" class="hint">Write File is off.</p>
+      <div class="voice-controls">
+        <button id="write-permission-on" type="button">Enable Write File</button>
+        <button id="write-permission-off" type="button">Disable Write File</button>
+      </div>
+      <form id="write-form" class="file-request write-form">
+        <input id="write-path" type="text" maxlength="240" placeholder="note.txt" autocomplete="off">
+        <textarea id="write-content" maxlength="100000" placeholder="File content"></textarea>
+        <button type="submit">Request write</button>
+      </form>
+      <div id="write-pending" class="log"></div>
+      <pre id="write-result" class="bubble file-result"></pre>
+      <h2>Create Folder</h2>
+      <p class="hint">Create Folder makes one new folder inside the workspace. The parent folder must already exist. Each new folder needs its own approval.</p>
+      <p id="folder-permission" class="hint">Create Folder is off.</p>
+      <div class="voice-controls">
+        <button id="folder-permission-on" type="button">Enable Create Folder</button>
+        <button id="folder-permission-off" type="button">Disable Create Folder</button>
+      </div>
+      <form id="folder-form" class="file-request">
+        <input id="folder-path" type="text" maxlength="240" placeholder="notes/new-folder" autocomplete="off">
+        <button type="submit">Request creation</button>
+      </form>
+      <div id="folder-pending" class="log"></div>
+      <pre id="folder-result" class="bubble file-result"></pre>
+    </section>
     <section class="memory">
       <h2>Memories</h2>
       <p class="hint">Stored facts stay separate from chat. Nothing is saved unless you ask.</p>
@@ -161,6 +265,7 @@
       planning: "Planning",
       requesting_approval: "Requesting approval",
       executing: "Executing a tool",
+      researching: "Researching",
       completed: "Completed",
       error: "Error",
       stopped: "Stopped"
@@ -214,8 +319,9 @@
       if (label === "Stopping") detail.textContent = "Waiting for the process to confirm the halt.";
       else if (label === "Stop could not be confirmed") detail.textContent = "The halt was not confirmed. Use End process.";
       else if (label === "Stopped") detail.textContent = "Halted. Resume does not replay dropped work. Send a new message after Resume.";
+      else if (label === "Researching") detail.textContent = "Searching the web. Resume does not repeat a stopped search.";
       else if (sending && label !== "Stopped") detail.textContent = "One request is in flight.";
-      else detail.textContent = "Local assistant. No tools are enabled.";
+      else detail.textContent = "Send chats normally. Research runs only when you ask.";
     }
 
     async function poll() {
@@ -258,6 +364,14 @@
             item.textContent = row.action + " · " + row.outcome;
             log.appendChild(item);
           });
+          if (data.status === "stopped") clearFilePanel();
+          else {
+            await loadFileSkill();
+            await loadListSkill();
+            await loadSearchSkill();
+            await loadWriteSkill();
+            await loadFolderSkill();
+          }
         }
       } catch (error) {
         polled = lastStatus;
@@ -282,7 +396,7 @@
       (data.messages || []).forEach((message) => {
         const item = document.createElement("div");
         item.className = "bubble " + (message.status === "failed" ? "failed" : message.role);
-        item.textContent = message.content;
+        appendMessage(item, message.content || "");
         thread.appendChild(item);
       });
     }
@@ -292,6 +406,7 @@
       silenceVoice();
       setVoice("Stopped", "Voice is stopped. Resume does not replay speech.");
       renderBanner(lastStatus);
+      clearFilePanel();
       try {
         await fetch("/api/emergency-stop", { method: "POST" });
       } catch (error) {
@@ -318,6 +433,263 @@
 
     document.getElementById("chat-form").addEventListener("submit", async (event) => {
       event.preventDefault();
+      await sendChat(false);
+    });
+
+    document.getElementById("research").addEventListener("click", async () => {
+      await sendChat(true);
+    });
+
+    function safeHttpsUrl(value) {
+      const cleaned = String(value || "").trim().replace(/[),.;:]+$/, "");
+      if (!cleaned) return "";
+      try {
+        const url = new URL(cleaned);
+        if (url.protocol !== "https:") return "";
+        if (url.username || url.password) return "";
+        return url.href;
+      } catch (error) {
+        return "";
+      }
+    }
+
+    function looseCells(text) {
+      const trimmed = String(text || "").trim();
+      if (trimmed.indexOf("|") === -1) return { prefix: trimmed, cells: [], suffix: "" };
+      const parts = trimmed.split("|");
+      const prefix = parts.shift().trim();
+      let suffix = "";
+      if (!trimmed.endsWith("|")) suffix = (parts.pop() || "").trim();
+      return {
+        prefix,
+        cells: parts.map((part) => part.trim()).filter((part) => part),
+        suffix
+      };
+    }
+
+    function restoreTableLine(line) {
+      const sepRe = /\|[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|/;
+      const match = sepRe.exec(line);
+      if (!match) return line;
+      const before = line.slice(0, match.index);
+      const after = line.slice(match.index + match[0].length);
+      if (!before.trim() && !after.trim()) return line;
+      const columns = (match[0].match(/:?-{3,}:?/g) || []).length;
+      if (!columns) return line;
+      const head = looseCells(before);
+      const header = head.cells.slice(-columns);
+      while (header.length < columns) header.push("");
+      const lead = head.cells.slice(0, Math.max(0, head.cells.length - columns));
+      const prefix = [head.prefix].concat(lead, head.suffix ? [head.suffix] : []).filter(Boolean).join(" ").trim();
+      const tail = looseCells(after);
+      const rows = [];
+      for (let index = 0; index < tail.cells.length; index += columns) {
+        const row = tail.cells.slice(index, index + columns);
+        while (row.length < columns) row.push("");
+        rows.push(row);
+      }
+      const lines = [];
+      if (prefix) lines.push(prefix);
+      lines.push("| " + header.join(" | ") + " |");
+      lines.push("| " + Array.from({ length: columns }, () => "---").join(" | ") + " |");
+      rows.forEach((row) => lines.push("| " + row.join(" | ") + " |"));
+      if (tail.prefix) lines.push(tail.prefix);
+      if (tail.suffix) lines.push(tail.suffix);
+      return lines.join("\n");
+    }
+
+    function restoreMarkdown(text) {
+      return String(text || "").replace(/\r\n/g, "\n").split("\n").map(restoreTableLine).join("\n");
+    }
+
+    function appendFormatted(parent, raw) {
+      const pattern = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__(?:(?!__).)+__)|(\[[^\]\n]+\]\(https:\/\/[^)\s]+\))|(https:\/\/[^\s<>"'`]+)/g;
+      const text = String(raw || "");
+      let last = 0;
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        if (match.index > last) parent.append(document.createTextNode(text.slice(last, match.index)));
+        const token = match[0];
+        if (token.charAt(0) === "`") {
+          const code = document.createElement("code");
+          code.textContent = token.slice(1, -1);
+          parent.append(code);
+        } else if (token.slice(0, 2) === "**" || token.slice(0, 2) === "__") {
+          const strong = document.createElement("strong");
+          appendFormatted(strong, token.slice(2, -2));
+          parent.append(strong);
+        } else if (token.charAt(0) === "[") {
+          const splitAt = token.indexOf("](");
+          const label = token.slice(1, splitAt);
+          const href = safeHttpsUrl(token.slice(splitAt + 2, -1));
+          if (!href || parent.tagName === "A") parent.append(document.createTextNode(token));
+          else appendLink(parent, href, label);
+        } else {
+          const href = safeHttpsUrl(token);
+          if (!href || parent.tagName === "A") parent.append(document.createTextNode(token));
+          else {
+            const shown = token.replace(/[),.;:]+$/, "");
+            appendLink(parent, href, shown);
+            const trailing = token.slice(shown.length);
+            if (trailing) parent.append(document.createTextNode(trailing));
+          }
+        }
+        last = match.index + token.length;
+      }
+      if (last < text.length) parent.append(document.createTextNode(text.slice(last)));
+    }
+
+    function appendLink(parent, href, label) {
+      const link = document.createElement("a");
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      appendFormatted(link, label);
+      parent.append(link);
+    }
+
+    function appendRich(parent, raw) {
+      const pieces = String(raw || "").split(/<br\s*\/?>/gi);
+      const bullets = pieces.map((part) => part.trim()).filter(Boolean);
+      if (bullets.length > 1 && bullets.every((part) => /^[•\-*+]\s+\S/.test(part))) {
+        const list = document.createElement("ul");
+        bullets.forEach((part) => {
+          const item = document.createElement("li");
+          appendFormatted(item, part.replace(/^[•\-*+]\s+/, ""));
+          list.append(item);
+        });
+        parent.append(list);
+        return;
+      }
+      pieces.forEach((piece, index) => {
+        if (index) parent.append(document.createElement("br"));
+        appendFormatted(parent, piece);
+      });
+    }
+
+    function splitRow(line) {
+      let text = line.trim();
+      if (text.charAt(0) === "|") text = text.slice(1);
+      if (text.charAt(text.length - 1) === "|") text = text.slice(0, -1);
+      return text.split("|").map((cell) => cell.trim());
+    }
+
+    function isSeparator(line) {
+      const cells = splitRow(line);
+      return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+    }
+
+    function isTableStart(lines, index) {
+      return index + 1 < lines.length && lineHasPipe(lines[index]) && isSeparator(lines[index + 1]);
+    }
+
+    function lineHasPipe(line) {
+      return String(line || "").indexOf("|") !== -1;
+    }
+
+    function readTable(lines, index) {
+      const headers = splitRow(lines[index]);
+      const columns = headers.length;
+      const table = document.createElement("table");
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      headers.forEach((cell) => {
+        const item = document.createElement("th");
+        appendRich(item, cell);
+        headRow.append(item);
+      });
+      head.append(headRow);
+      table.append(head);
+      const body = document.createElement("tbody");
+      let cursor = index + 2;
+      while (cursor < lines.length && lineHasPipe(lines[cursor]) && !isSeparator(lines[cursor]) && lines[cursor].trim()) {
+        const cells = splitRow(lines[cursor]).slice(0, columns);
+        while (cells.length < columns) cells.push("");
+        const row = document.createElement("tr");
+        cells.forEach((cell) => {
+          const item = document.createElement("td");
+          appendRich(item, cell);
+          row.append(item);
+        });
+        body.append(row);
+        cursor += 1;
+      }
+      table.append(body);
+      const wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      wrap.append(table);
+      return { node: wrap, next: cursor };
+    }
+
+    function renderMarkdown(content) {
+      const fragment = document.createDocumentFragment();
+      const lines = restoreMarkdown(content).split("\n");
+      let index = 0;
+      while (index < lines.length) {
+        const line = lines[index];
+        if (!line.trim()) {
+          index += 1;
+          continue;
+        }
+        const heading = /^(#{1,6})\s+(\S.*)$/.exec(line);
+        if (heading) {
+          const element = document.createElement("h" + heading[1].length);
+          appendRich(element, heading[2]);
+          fragment.append(element);
+          index += 1;
+          continue;
+        }
+        if (isTableStart(lines, index)) {
+          const table = readTable(lines, index);
+          fragment.append(table.node);
+          index = table.next;
+          continue;
+        }
+        if (/^\s*[-*+•]\s+\S/.test(line)) {
+          const list = document.createElement("ul");
+          while (index < lines.length && /^\s*[-*+•]\s+\S/.test(lines[index])) {
+            const item = document.createElement("li");
+            appendRich(item, lines[index].replace(/^\s*[-*+•]\s+/, ""));
+            list.append(item);
+            index += 1;
+          }
+          fragment.append(list);
+          continue;
+        }
+        if (/^\d+\.\s+\S/.test(line)) {
+          const list = document.createElement("ol");
+          while (index < lines.length && /^\d+\.\s+\S/.test(lines[index])) {
+            const item = document.createElement("li");
+            const title = lines[index].replace(/^\d+\.\s+/, "");
+            index += 1;
+            appendRich(item, title);
+            while (index < lines.length && /^https:\/\/\S+$/.test(lines[index].trim())) {
+              item.append(document.createElement("br"));
+              appendFormatted(item, lines[index].trim());
+              index += 1;
+            }
+            list.append(item);
+          }
+          fragment.append(list);
+          continue;
+        }
+        const paragraph = [];
+        while (index < lines.length && lines[index].trim() && !/^(#{1,6})\s+\S/.test(lines[index]) && !isTableStart(lines, index) && !/^\s*[-*+•]\s+\S/.test(lines[index]) && !/^\d+\.\s+\S/.test(lines[index])) {
+          paragraph.push(lines[index].trim());
+          index += 1;
+        }
+        const element = document.createElement("p");
+        appendRich(element, paragraph.join(" "));
+        fragment.append(element);
+      }
+      return fragment;
+    }
+
+    function appendMessage(parent, content) {
+      parent.replaceChildren(renderMarkdown(content));
+    }
+
+    async function sendChat(research) {
       const input = document.getElementById("text");
       const text = input.value.trim();
       if (!text || sending) return;
@@ -329,7 +701,7 @@
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text })
+          body: JSON.stringify({ text, research: Boolean(research) })
         });
         const data = await response.json().catch(() => ({}));
         input.value = "";
@@ -343,6 +715,432 @@
         sending = false;
         await poll();
       }
+    }
+
+    function clearFilePanel() {
+      ["file-result", "list-result", "search-result", "write-result", "folder-result"].forEach((id) => {
+        const node = document.getElementById(id);
+        if (node) node.textContent = "";
+      });
+      ["file-pending", "list-pending", "search-pending", "write-pending", "folder-pending"].forEach((id) => {
+        const node = document.getElementById(id);
+        if (node) node.replaceChildren();
+      });
+    }
+
+    async function loadFileSkill() {
+      const response = await fetch("/api/skills/read");
+      if (!response.ok) return;
+      const data = await response.json();
+      const status = document.getElementById("file-permission");
+      status.textContent = data.permission_enabled
+        ? "Read File is on. Each file still needs its own approval."
+        : "Read File is off.";
+      const list = document.getElementById("file-pending");
+      list.replaceChildren();
+      (data.pending || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row file-actions";
+        const label = document.createElement("span");
+        label.textContent = "Read File · " + (row.path || "");
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideFile(row.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.className = "danger";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideFile(row.action_id, false));
+        item.append(label, approve, deny);
+        list.appendChild(item);
+      });
+    }
+
+    function showFileResult(data) {
+      const result = document.getElementById("file-result");
+      if (!data || data.outcome === "cancelled" || lastStatus === "stopped" || stopRequestedAt !== null) {
+        result.textContent = "";
+        return;
+      }
+      if (typeof data.text === "string") result.textContent = data.text;
+      else if (typeof data.detail === "string") result.textContent = data.detail;
+      else result.textContent = "The file could not be read.";
+    }
+
+    async function decideFile(actionId, approved) {
+      const response = await fetch("/api/skills/read/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      showFileResult(data);
+      await loadFileSkill();
+      await poll();
+    }
+
+    async function setReadPermission(enabled) {
+      await fetch("/api/skills/read/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      await loadFileSkill();
+    }
+
+    document.getElementById("file-permission-on").addEventListener("click", () => setReadPermission(true));
+    document.getElementById("file-permission-off").addEventListener("click", () => setReadPermission(false));
+    document.getElementById("file-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("file-path");
+      const path = input.value.trim();
+      if (!path) return;
+      const response = await fetch("/api/skills/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path })
+      });
+      const data = await response.json().catch(() => ({}));
+      input.value = "";
+      if (!data || data.outcome !== "needs_approval") showFileResult(data);
+      else document.getElementById("file-result").textContent = "";
+      await loadFileSkill();
+    });
+
+    async function loadListSkill() {
+      const response = await fetch("/api/skills/list");
+      if (!response.ok) return;
+      const data = await response.json();
+      const status = document.getElementById("list-permission");
+      status.textContent = data.permission_enabled
+        ? "List Files is on. Each folder still needs its own approval."
+        : "List Files is off.";
+      const list = document.getElementById("list-pending");
+      list.replaceChildren();
+      (data.pending || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row file-actions";
+        const label = document.createElement("span");
+        label.textContent = "List Files · " + (row.path || "workspace");
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideList(row.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.className = "danger";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideList(row.action_id, false));
+        item.append(label, approve, deny);
+        list.appendChild(item);
+      });
+    }
+
+    function showListResult(data) {
+      const result = document.getElementById("list-result");
+      if (!data || data.outcome === "cancelled" || lastStatus === "stopped" || stopRequestedAt !== null) {
+        result.textContent = "";
+        return;
+      }
+      if (typeof data.text === "string") result.textContent = data.text;
+      else if (typeof data.detail === "string") result.textContent = data.detail;
+      else result.textContent = "The folder could not be listed.";
+    }
+
+    async function decideList(actionId, approved) {
+      const response = await fetch("/api/skills/list/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      showListResult(data);
+      await loadListSkill();
+      await poll();
+    }
+
+    async function setListPermission(enabled) {
+      await fetch("/api/skills/list/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      await loadListSkill();
+    }
+
+    document.getElementById("list-permission-on").addEventListener("click", () => setListPermission(true));
+    document.getElementById("list-permission-off").addEventListener("click", () => setListPermission(false));
+    document.getElementById("list-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("list-path");
+      const path = input.value.trim();
+      const response = await fetch("/api/skills/list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path })
+      });
+      const data = await response.json().catch(() => ({}));
+      input.value = "";
+      if (!data || data.outcome !== "needs_approval") showListResult(data);
+      else document.getElementById("list-result").textContent = "";
+      await loadListSkill();
+    });
+
+    async function loadSearchSkill() {
+      const response = await fetch("/api/skills/search");
+      if (!response.ok) return;
+      const data = await response.json();
+      const status = document.getElementById("search-permission");
+      status.textContent = data.permission_enabled
+        ? "Search Files is on. Each search still needs its own approval."
+        : "Search Files is off.";
+      const list = document.getElementById("search-pending");
+      list.replaceChildren();
+      (data.pending || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row file-actions";
+        const label = document.createElement("span");
+        label.textContent = "Search Files · " + (row.query || "");
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideSearch(row.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.className = "danger";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideSearch(row.action_id, false));
+        item.append(label, approve, deny);
+        list.appendChild(item);
+      });
+    }
+
+    function showSearchResult(data) {
+      const result = document.getElementById("search-result");
+      if (!data || data.outcome === "cancelled" || lastStatus === "stopped" || stopRequestedAt !== null) {
+        result.textContent = "";
+        return;
+      }
+      if (typeof data.text === "string") result.textContent = data.text;
+      else if (typeof data.detail === "string") result.textContent = data.detail;
+      else result.textContent = "The search could not be completed.";
+    }
+
+    async function decideSearch(actionId, approved) {
+      const response = await fetch("/api/skills/search/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      showSearchResult(data);
+      await loadSearchSkill();
+      await poll();
+    }
+
+    async function setSearchPermission(enabled) {
+      await fetch("/api/skills/search/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      await loadSearchSkill();
+    }
+
+    document.getElementById("search-permission-on").addEventListener("click", () => setSearchPermission(true));
+    document.getElementById("search-permission-off").addEventListener("click", () => setSearchPermission(false));
+    document.getElementById("search-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("search-query");
+      const query = input.value.trim();
+      if (!query) return;
+      const response = await fetch("/api/skills/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+      });
+      const data = await response.json().catch(() => ({}));
+      input.value = "";
+      if (!data || data.outcome !== "needs_approval") showSearchResult(data);
+      else document.getElementById("search-result").textContent = "";
+      await loadSearchSkill();
+    });
+
+    async function loadWriteSkill() {
+      const response = await fetch("/api/skills/write");
+      if (!response.ok) return;
+      const data = await response.json();
+      const status = document.getElementById("write-permission");
+      status.textContent = data.permission_enabled
+        ? "Write File is on. Each write still needs its own approval."
+        : "Write File is off.";
+      const list = document.getElementById("write-pending");
+      list.replaceChildren();
+      (data.pending || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row file-actions";
+        const label = document.createElement("span");
+        const verb = row.mode === "overwrite" || row.mode === "create" ? row.mode : "write";
+        label.textContent = "Write File · " + verb + " " + (row.path || "");
+        item.appendChild(label);
+        if (row.mode === "overwrite") {
+          const warning = document.createElement("p");
+          warning.textContent = "This will overwrite the existing file.";
+          item.appendChild(warning);
+        }
+        if (typeof row.content === "string") {
+          const preview = document.createElement("pre");
+          preview.className = "bubble file-result";
+          preview.textContent = row.content;
+          item.appendChild(preview);
+        }
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideWrite(row.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.className = "danger";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideWrite(row.action_id, false));
+        item.append(approve, deny);
+        list.appendChild(item);
+      });
+    }
+
+    function showWriteResult(data) {
+      const result = document.getElementById("write-result");
+      if (!data || data.outcome === "cancelled" || lastStatus === "stopped" || stopRequestedAt !== null) {
+        result.textContent = "";
+        return;
+      }
+      if (typeof data.text === "string") result.textContent = data.text;
+      else if (typeof data.detail === "string") result.textContent = data.detail;
+      else result.textContent = "The file could not be written.";
+    }
+
+    async function decideWrite(actionId, approved) {
+      const response = await fetch("/api/skills/write/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      showWriteResult(data);
+      await loadWriteSkill();
+      await poll();
+    }
+
+    async function setWritePermission(enabled) {
+      await fetch("/api/skills/write/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      await loadWriteSkill();
+    }
+
+    document.getElementById("write-permission-on").addEventListener("click", () => setWritePermission(true));
+    document.getElementById("write-permission-off").addEventListener("click", () => setWritePermission(false));
+    document.getElementById("write-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const pathInput = document.getElementById("write-path");
+      const contentInput = document.getElementById("write-content");
+      const path = pathInput.value.trim();
+      const content = contentInput.value;
+      if (!path) return;
+      const response = await fetch("/api/skills/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, content })
+      });
+      const data = await response.json().catch(() => ({}));
+      pathInput.value = "";
+      contentInput.value = "";
+      if (!data || data.outcome !== "needs_approval") showWriteResult(data);
+      else document.getElementById("write-result").textContent = "";
+      await loadWriteSkill();
+    });
+
+    async function loadFolderSkill() {
+      const response = await fetch("/api/skills/folder");
+      if (!response.ok) return;
+      const data = await response.json();
+      const status = document.getElementById("folder-permission");
+      status.textContent = data.permission_enabled
+        ? "Create Folder is on. Each folder still needs its own approval."
+        : "Create Folder is off.";
+      const list = document.getElementById("folder-pending");
+      list.replaceChildren();
+      (data.pending || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row file-actions";
+        const label = document.createElement("span");
+        label.textContent = "Create Folder · " + (row.path || "");
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideFolder(row.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.className = "danger";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideFolder(row.action_id, false));
+        item.append(label, approve, deny);
+        list.appendChild(item);
+      });
+    }
+
+    function showFolderResult(data) {
+      const result = document.getElementById("folder-result");
+      if (!data || data.outcome === "cancelled" || lastStatus === "stopped" || stopRequestedAt !== null) {
+        result.textContent = "";
+        return;
+      }
+      if (typeof data.text === "string") result.textContent = data.text;
+      else if (typeof data.detail === "string") result.textContent = data.detail;
+      else result.textContent = "The folder could not be created.";
+    }
+
+    async function decideFolder(actionId, approved) {
+      const response = await fetch("/api/skills/folder/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      showFolderResult(data);
+      await loadFolderSkill();
+      await poll();
+    }
+
+    async function setFolderPermission(enabled) {
+      await fetch("/api/skills/folder/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      await loadFolderSkill();
+    }
+
+    document.getElementById("folder-permission-on").addEventListener("click", () => setFolderPermission(true));
+    document.getElementById("folder-permission-off").addEventListener("click", () => setFolderPermission(false));
+    document.getElementById("folder-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("folder-path");
+      const path = input.value.trim();
+      if (!path) return;
+      const response = await fetch("/api/skills/folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path })
+      });
+      const data = await response.json().catch(() => ({}));
+      input.value = "";
+      if (!data || data.outcome !== "needs_approval") showFolderResult(data);
+      else document.getElementById("folder-result").textContent = "";
+      await loadFolderSkill();
     });
 
     document.getElementById("apply-provider").addEventListener("click", async () => {

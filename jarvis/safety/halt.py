@@ -95,6 +95,16 @@ class HaltController:
         with self._lock:
             return self.approvals.get(action_id)
 
+    def resolve_approval(self, action_id: str, decision: str) -> bool:
+        """Record one pending action as approved or denied. Stopped actions stay cancelled."""
+        if decision not in {"approved", "denied"}:
+            raise ValueError("unknown approval decision")
+        with self._lock:
+            if self.halted or self.approvals.get(action_id) != "pending":
+                return False
+            self.approvals[action_id] = decision
+            return True
+
     def register_child(self, proc: Any) -> None:
         with self._lock:
             self.children.append(proc)
@@ -167,6 +177,41 @@ class HaltController:
             if not self.allow_outbound():
                 return OutboundResult(outcome="cancelled")
             response = client.post(url, headers=headers, json=json_body)
+            if not self.allow_outbound():
+                return OutboundResult(outcome="already_completed", response=response)
+            return OutboundResult(outcome="ok", response=response)
+        except httpx.TimeoutException:
+            if not self.allow_outbound():
+                return OutboundResult(outcome="cancelled")
+            return OutboundResult(outcome="timeout")
+        except httpx.HTTPError:
+            if not self.allow_outbound():
+                return OutboundResult(outcome="cancelled")
+            return OutboundResult(outcome="http_error")
+        finally:
+            self.unregister_client(client)
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    def guarded_get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict | None = None,
+        timeout: float,
+        transport: httpx.BaseTransport | None = None,
+    ) -> OutboundResult:
+        if not self.allow_outbound():
+            return OutboundResult(outcome="cancelled")
+        client = httpx.Client(timeout=timeout, transport=transport, follow_redirects=False)
+        self.register_client(client)
+        try:
+            if not self.allow_outbound():
+                return OutboundResult(outcome="cancelled")
+            response = client.get(url, headers=headers, params=params)
             if not self.allow_outbound():
                 return OutboundResult(outcome="already_completed", response=response)
             return OutboundResult(outcome="ok", response=response)

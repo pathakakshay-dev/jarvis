@@ -27,7 +27,7 @@ def _settings(tmp_path: Path) -> Settings:
 def test_chat_stop_resume_and_provider_switch(tmp_path: Path):
     fake = FakeProvider(reply="local reply")
     app = create_app(settings=_settings(tmp_path), fake=fake, start_hotkeys_flag=False)
-    assert app.state.skills.ids() == []
+    assert app.state.skills.ids() == ["web_research", "read_file", "list_files", "search_files", "write_file", "create_folder"]
     assert all(enabled is False for enabled in app.state.policy.enabled.values())
     (tmp_path / "resume.json").write_text('{"task": "send"}', encoding="utf-8")
 
@@ -37,7 +37,7 @@ def test_chat_stop_resume_and_provider_switch(tmp_path: Path):
         body = status.json()
         assert body["status"] == "idle"
         assert body["provider"] == "fake"
-        assert body["skills"] == []
+        assert body["skills"] == ["web_research", "read_file", "list_files", "search_files", "write_file", "create_folder"]
         assert body["queue_size"] == 0
         assert fake.calls == 0
 

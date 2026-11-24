@@ -17,9 +17,22 @@ from jarvis.memory.commands import validate_fact
 from jarvis.memory.store import ConversationStore
 from jarvis.providers import build_registry
 from jarvis.providers.fake import FakeProvider
+from jarvis.research.web import WebResearch
 from jarvis.safety.halt import HaltController
 from jarvis.safety.hotkey import start_hotkeys
-from jarvis.safety.policy import Policy
+from jarvis.safety.policy import Permission, Policy
+from jarvis.skills.base import SkillResult
+from jarvis.skills.executor import SkillExecutor
+from jarvis.skills.files import (
+    CreateFolder,
+    ListFiles,
+    ReadFile,
+    SearchFiles,
+    WriteFile,
+    _FileError,
+    classify_write,
+    prepare_folder,
+)
 from jarvis.skills.registry import SkillRegistry
 from jarvis.voice.diagnostic import (
     CONSENT_HEADER,
@@ -38,6 +51,7 @@ GEMINI_NOTICE = "Unpaid Gemini requests may be used to improve Google products."
 
 class ChatIn(BaseModel):
     text: str = Field(max_length=8000)
+    research: bool = False
 
 
 class ProviderIn(BaseModel):
@@ -52,6 +66,28 @@ class MemoryIn(BaseModel):
 class ConfirmIn(BaseModel):
     confirm: bool = False
     phrase: str = ""
+
+
+class SkillPathIn(BaseModel):
+    path: str = Field(max_length=240)
+
+
+class SkillQueryIn(BaseModel):
+    query: str = Field(max_length=80)
+
+
+class SkillWriteIn(BaseModel):
+    path: str = Field(max_length=240)
+    content: str = Field(max_length=100_000)
+
+
+class SkillDecisionIn(BaseModel):
+    action_id: str = Field(min_length=1, max_length=80)
+    approved: bool
+
+
+class ReadPermissionIn(BaseModel):
+    enabled: bool
 
 
 CLEAR_PHRASE = "clear all memories"
@@ -75,9 +111,18 @@ def create_app(
     fake = fake or FakeProvider()
     registry = build_registry(settings, fake=fake)
     skills = SkillRegistry()
+    researcher = WebResearch(settings.brave_api_key, provider=settings.search_provider)
+    skills.register(researcher)
+    workspace = settings.root / "workspace"
+    skills.register(ReadFile(workspace, halt))
+    skills.register(ListFiles(workspace, halt))
+    skills.register(SearchFiles(workspace, halt))
+    skills.register(WriteFile(workspace, halt))
+    skills.register(CreateFolder(workspace, halt))
     policy = Policy(settings.root)
     store = ConversationStore(settings.data_dir / "jarvis.sqlite3")
     audit = AuditLog(settings.data_dir / "audit.jsonl")
+    skill_executor = SkillExecutor(skills, policy, halt, audit)
     voice_gate = VoiceGate()
     diagnostic = DiagnosticStore(settings.data_dir / "diagnostic")
     diagnostic.discard()
@@ -97,9 +142,11 @@ def create_app(
     app.state.fake = fake
     app.state.registry = registry
     app.state.skills = skills
+    app.state.researcher = researcher
     app.state.policy = policy
     app.state.store = store
     app.state.audit = audit
+    app.state.skill_executor = skill_executor
     app.state.voice_gate = voice_gate
     app.state.diagnostic = diagnostic
     app.state.transcriber = transcriber
@@ -192,6 +239,175 @@ def create_app(
         audit.write(status="completed", detail="Memory deleted")
         return {"deleted": memory_id}
 
+    def _skill_payload(result, path: str, skill: str) -> dict:
+        return {
+            "ok": result.ok,
+            "text": result.text,
+            "outcome": result.outcome,
+            "error_type": result.error_type,
+            "action_id": result.action_id,
+            "skill": skill,
+            "path": path,
+        }
+
+    def _confirm_skill(action_id: str, approved: bool, skill: str) -> dict:
+        path = skill_executor.requested_path(action_id, skill)
+        if skill_executor.pending_skill(action_id) != skill:
+            result = SkillResult(
+                False,
+                text="That action is not waiting for approval.",
+                outcome="rejected",
+                error_type="unknown_action",
+            )
+            return _skill_payload(result, path, skill)
+        return _skill_payload(skill_executor.confirm(action_id, approved=approved), path, skill)
+
+    @app.get("/api/skills/read")
+    def read_skill_state():
+        pending = [row for row in skill_executor.pending() if row["skill"] == "read_file"]
+        return {"permission_enabled": bool(policy.enabled[Permission.READ]), "pending": pending}
+
+    @app.post("/api/skills/read")
+    def request_read(body: SkillPathIn):
+        path = body.path.strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="Say which file to read.")
+        result = skill_executor.submit("read_file", {"path": path})
+        return _skill_payload(result, path, "read_file")
+
+    @app.post("/api/skills/read/confirm")
+    def confirm_read(body: SkillDecisionIn):
+        return _confirm_skill(body.action_id, body.approved, "read_file")
+
+    @app.post("/api/skills/read/permission")
+    def set_read_permission(body: ReadPermissionIn):
+        policy.enabled[Permission.READ] = bool(body.enabled)
+        audit.write(
+            status="idle",
+            skill_id="read_file",
+            detail="Read File permission enabled" if body.enabled else "Read File permission disabled",
+        )
+        return {"permission": "read", "enabled": bool(policy.enabled[Permission.READ])}
+
+    @app.get("/api/skills/list")
+    def list_skill_state():
+        pending = [row for row in skill_executor.pending() if row["skill"] == "list_files"]
+        return {"permission_enabled": bool(policy.enabled[Permission.LIST]), "pending": pending}
+
+    @app.post("/api/skills/list")
+    def request_list(body: SkillPathIn):
+        path = body.path.strip()
+        result = skill_executor.submit("list_files", {"path": path})
+        return _skill_payload(result, path, "list_files")
+
+    @app.post("/api/skills/list/confirm")
+    def confirm_list(body: SkillDecisionIn):
+        return _confirm_skill(body.action_id, body.approved, "list_files")
+
+    @app.post("/api/skills/list/permission")
+    def set_list_permission(body: ReadPermissionIn):
+        policy.enabled[Permission.LIST] = bool(body.enabled)
+        audit.write(
+            status="idle",
+            skill_id="list_files",
+            detail="List Files permission enabled" if body.enabled else "List Files permission disabled",
+        )
+        return {"permission": "list", "enabled": bool(policy.enabled[Permission.LIST])}
+
+    @app.get("/api/skills/search")
+    def search_skill_state():
+        pending = [row for row in skill_executor.pending() if row["skill"] == "search_files"]
+        return {"permission_enabled": bool(policy.enabled[Permission.SEARCH]), "pending": pending}
+
+    @app.post("/api/skills/search")
+    def request_search(body: SkillQueryIn):
+        query = body.query.strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="Say which filename to search for.")
+        result = skill_executor.submit("search_files", {"query": query})
+        return _skill_payload(result, query, "search_files")
+
+    @app.post("/api/skills/search/confirm")
+    def confirm_search(body: SkillDecisionIn):
+        return _confirm_skill(body.action_id, body.approved, "search_files")
+
+    @app.post("/api/skills/search/permission")
+    def set_search_permission(body: ReadPermissionIn):
+        policy.enabled[Permission.SEARCH] = bool(body.enabled)
+        audit.write(
+            status="idle",
+            skill_id="search_files",
+            detail="Search Files permission enabled" if body.enabled else "Search Files permission disabled",
+        )
+        return {"permission": "search", "enabled": bool(policy.enabled[Permission.SEARCH])}
+
+    @app.get("/api/skills/write")
+    def write_skill_state():
+        pending = [row for row in skill_executor.pending() if row["skill"] == "write_file"]
+        return {"permission_enabled": bool(policy.enabled[Permission.WRITE]), "pending": pending}
+
+    @app.post("/api/skills/write")
+    def request_write(body: SkillWriteIn):
+        path = body.path.strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="Say which file to write.")
+        try:
+            mode = classify_write(workspace, path)
+        except _FileError as exc:
+            result = SkillResult(False, text=exc.text, outcome="rejected", error_type=exc.error_type)
+            return _skill_payload(result, path, "write_file")
+        result = skill_executor.submit("write_file", {"path": path, "content": body.content, "mode": mode})
+        payload = _skill_payload(result, path, "write_file")
+        if result.outcome == "needs_approval":
+            payload["mode"] = mode
+        return payload
+
+    @app.post("/api/skills/write/confirm")
+    def confirm_write(body: SkillDecisionIn):
+        return _confirm_skill(body.action_id, body.approved, "write_file")
+
+    @app.post("/api/skills/write/permission")
+    def set_write_permission(body: ReadPermissionIn):
+        policy.enabled[Permission.WRITE] = bool(body.enabled)
+        audit.write(
+            status="idle",
+            skill_id="write_file",
+            detail="Write File permission enabled" if body.enabled else "Write File permission disabled",
+        )
+        return {"permission": "write", "enabled": bool(policy.enabled[Permission.WRITE])}
+
+    @app.get("/api/skills/folder")
+    def folder_skill_state():
+        pending = [row for row in skill_executor.pending() if row["skill"] == "create_folder"]
+        return {"permission_enabled": bool(policy.enabled[Permission.FOLDER]), "pending": pending}
+
+    @app.post("/api/skills/folder")
+    def request_folder(body: SkillPathIn):
+        path = body.path.strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="Say which folder to create.")
+        try:
+            prepare_folder(workspace, path)
+        except _FileError as exc:
+            result = SkillResult(False, text=exc.text, outcome="rejected", error_type=exc.error_type)
+            return _skill_payload(result, path, "create_folder")
+        result = skill_executor.submit("create_folder", {"path": path})
+        return _skill_payload(result, path, "create_folder")
+
+    @app.post("/api/skills/folder/confirm")
+    def confirm_folder(body: SkillDecisionIn):
+        return _confirm_skill(body.action_id, body.approved, "create_folder")
+
+    @app.post("/api/skills/folder/permission")
+    def set_folder_permission(body: ReadPermissionIn):
+        policy.enabled[Permission.FOLDER] = bool(body.enabled)
+        audit.write(
+            status="idle",
+            skill_id="create_folder",
+            detail="Create Folder permission enabled" if body.enabled else "Create Folder permission disabled",
+        )
+        return {"permission": "folder", "enabled": bool(policy.enabled[Permission.FOLDER])}
+
     @app.post("/api/emergency-stop")
     def emergency_stop():
         report = halt.emergency_stop()
@@ -247,6 +463,8 @@ def create_app(
                 audit=audit,
                 timeout_s=settings.timeout_s,
                 max_steps=settings.max_steps,
+                research=body.research,
+                researcher=app.state.researcher,
             )
 
         try:
