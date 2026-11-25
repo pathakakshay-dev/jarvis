@@ -12,7 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.agent.loop import run_turn
 from jarvis.audit import AuditLog
+from jarvis.desktop.calculator import CalculatorOpener
+from jarvis.desktop.control import DesktopController
 from jarvis.desktop.notepad import NotepadOpener
+from jarvis.desktop.switch import WindowSwitcher
 from jarvis.desktop.plan import DesktopPlanError, propose_desktop_plan
 from jarvis.desktop.safety import DesktopSafety
 from jarvis.desktop.simulator import DesktopSimulator
@@ -40,6 +43,7 @@ from jarvis.skills.files import (
 )
 from jarvis.skills.apps import AppInventory
 from jarvis.skills.clipboard import ClipboardRead
+from jarvis.agent.goal import GoalAgent
 from jarvis.skills.orchestrator import SkillOrchestrator
 from jarvis.skills.system import SystemInfo
 from jarvis.skills.registry import SkillRegistry
@@ -99,6 +103,23 @@ class AgentTaskIn(BaseModel):
     task: str = Field(max_length=800)
 
 
+class GoalTaskIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task: str = Field(min_length=1, max_length=400)
+
+
+class GoalStartIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
+class GoalDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
 class DesktopTaskIn(BaseModel):
     task: str = Field(max_length=400)
 
@@ -131,6 +152,33 @@ class NotepadPermissionIn(BaseModel):
     enabled: bool
 
 
+class DesktopControlIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str = Field(min_length=1, max_length=40)
+    window_id: str = Field(default="", max_length=32)
+    element_id: str = Field(default="", max_length=32)
+    text: str = Field(default="", max_length=200)
+    shortcut: str = Field(default="", max_length=20)
+
+
+class DesktopControlDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
+class WindowFocusIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str = Field(min_length=1, max_length=40)
+    window_id: str = Field(default="", max_length=32)
+
+
+class WindowFocusDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
 CLEAR_PHRASE = "clear all memories"
 
 
@@ -147,6 +195,9 @@ def create_app(
     transcriber=None,
     speaker=None,
     notepad_launcher=None,
+    calculator_launcher=None,
+    desktop_port=None,
+    focus_port=None,
 ) -> FastAPI:
     settings = settings or load_settings(project_root())
     halt = halt or HaltController()
@@ -170,6 +221,9 @@ def create_app(
     desktop_safety = DesktopSafety(halt, audit)
     desktop_simulator = DesktopSimulator(desktop_safety)
     notepad_opener = NotepadOpener(halt, audit, policy, launcher=notepad_launcher)
+    calculator_opener = CalculatorOpener(halt, audit, launcher=calculator_launcher)
+    desktop_control = DesktopController(halt, audit, policy, desktop=desktop_port)
+    window_switcher = WindowSwitcher(halt, audit, desktop=focus_port)
     skill_executor = SkillExecutor(skills, policy, halt, audit)
     orchestrator = SkillOrchestrator(
         skill_executor,
@@ -180,6 +234,17 @@ def create_app(
         policy,
         registry.active,
         settings.timeout_s,
+    )
+    goal_agent = GoalAgent(
+        skill_executor,
+        skills,
+        halt,
+        audit,
+        workspace,
+        policy,
+        registry.active,
+        settings.timeout_s,
+        other_busy=lambda: orchestrator.snapshot().get("status") in {"running", "awaiting_approval"},
     )
     voice_gate = VoiceGate()
     diagnostic = DiagnosticStore(settings.data_dir / "diagnostic")
@@ -208,8 +273,12 @@ def create_app(
     app.state.desktop_safety = desktop_safety
     app.state.desktop_simulator = desktop_simulator
     app.state.notepad_opener = notepad_opener
+    app.state.calculator_opener = calculator_opener
+    app.state.desktop_control = desktop_control
+    app.state.window_switcher = window_switcher
     app.state.skill_executor = skill_executor
     app.state.orchestrator = orchestrator
+    app.state.goal_agent = goal_agent
     app.state.voice_gate = voice_gate
     app.state.diagnostic = diagnostic
     app.state.transcriber = transcriber
@@ -238,6 +307,10 @@ def create_app(
         desktop_safety.observe_stop()
         desktop_simulator.observe_stop()
         notepad_opener.observe_stop()
+        calculator_opener.observe_stop()
+        goal_agent.observe_stop()
+        desktop_control.observe_stop()
+        window_switcher.observe_stop()
         body = halt.snapshot()
         provider = registry.active()
         body.update(
@@ -330,11 +403,14 @@ def create_app(
         }
 
     def _plan_action(action_id: str) -> bool:
-        return bool(action_id) and action_id == orchestrator.current_action_id()
+        if not action_id:
+            return False
+        return action_id == orchestrator.current_action_id() or action_id == goal_agent.current_action_id()
 
     def _visible_pending(skill: str) -> list[dict]:
-        hidden = orchestrator.current_action_id()
-        return [row for row in skill_executor.pending() if row["skill"] == skill and row["action_id"] != hidden]
+        hidden = {orchestrator.current_action_id(), goal_agent.current_action_id()}
+        hidden.discard("")
+        return [row for row in skill_executor.pending() if row["skill"] == skill and row["action_id"] not in hidden]
 
     def _confirm_skill(action_id: str, approved: bool, skill: str) -> dict:
         path = skill_executor.requested_path(action_id, skill)
@@ -621,12 +697,94 @@ def create_app(
         )
         return {"permission": "app_control", "enabled": enabled}
 
+    @app.get("/api/desktop/calculator")
+    def calculator_state():
+        return calculator_opener.status()
+
+    @app.post("/api/desktop/calculator")
+    def calculator_request(_body: SystemRequestIn):
+        return calculator_opener.request()
+
+    @app.post("/api/desktop/calculator/confirm")
+    def calculator_confirm(body: NotepadDecisionIn):
+        return calculator_opener.confirm(body.action_id, body.approved)
+
+    @app.post("/api/desktop/calculator/permission")
+    def calculator_permission(body: NotepadPermissionIn):
+        enabled = calculator_opener.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Open Calculator enabled" if enabled else "Open Calculator disabled",
+        )
+        return {"permission": "calculator", "enabled": enabled}
+
+    @app.get("/api/desktop/control")
+    def desktop_control_state():
+        return desktop_control.status()
+
+    @app.post("/api/desktop/control/preview")
+    def desktop_control_preview(body: DesktopControlIn):
+        return desktop_control.preview(body.model_dump())
+
+    @app.post("/api/desktop/control/confirm")
+    def desktop_control_confirm(body: DesktopControlDecisionIn):
+        return desktop_control.confirm(body.action_id, body.approved)
+
+    @app.post("/api/desktop/control/cancel")
+    def desktop_control_cancel(_body: SystemRequestIn):
+        return desktop_control.cancel()
+
+    @app.post("/api/desktop/control/permission")
+    def desktop_control_permission(body: NotepadPermissionIn):
+        enabled = desktop_control.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Desktop control enabled" if enabled else "Desktop control disabled",
+        )
+        return {"permission": "automate", "enabled": enabled}
+
+    @app.get("/api/desktop/focus")
+    def window_focus_state():
+        return window_switcher.status()
+
+    @app.post("/api/desktop/focus/preview")
+    def window_focus_preview(body: WindowFocusIn):
+        return window_switcher.preview(body.model_dump())
+
+    @app.post("/api/desktop/focus/confirm")
+    def window_focus_confirm(body: WindowFocusDecisionIn):
+        return window_switcher.confirm(body.action_id, body.approved)
+
+    @app.post("/api/desktop/focus/cancel")
+    def window_focus_cancel(_body: SystemRequestIn):
+        return window_switcher.cancel()
+
+    @app.post("/api/desktop/focus/permission")
+    def window_focus_permission(body: NotepadPermissionIn):
+        enabled = window_switcher.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Window switching enabled" if enabled else "Window switching disabled",
+        )
+        return {"permission": "window_switch", "enabled": enabled}
+
     @app.get("/api/agent/plan")
     def agent_plan():
         return orchestrator.snapshot()
 
     @app.post("/api/agent/plan")
     def start_agent_plan(body: AgentTaskIn):
+        if goal_agent.active():
+            return {
+                "ok": False,
+                "text": "A goal is already running.",
+                "outcome": "rejected",
+                "status": "rejected",
+                "task": "",
+                "steps": [],
+                "current": None,
+                "results": [],
+            }
         return orchestrator.start(body.task)
 
     @app.post("/api/agent/plan/confirm")
@@ -637,12 +795,36 @@ def create_app(
     def cancel_agent_plan():
         return orchestrator.cancel()
 
+    @app.get("/api/agent/goal")
+    def goal_state():
+        return goal_agent.snapshot()
+
+    @app.post("/api/agent/goal")
+    def propose_goal(body: GoalTaskIn):
+        return goal_agent.propose(body.task)
+
+    @app.post("/api/agent/goal/start")
+    def start_goal(body: GoalStartIn):
+        return goal_agent.start(body.plan_id, body.approved)
+
+    @app.post("/api/agent/goal/confirm")
+    def confirm_goal(body: GoalDecisionIn):
+        return goal_agent.confirm(body.action_id, body.approved)
+
+    @app.post("/api/agent/goal/cancel")
+    def cancel_goal():
+        return goal_agent.cancel()
+
     @app.post("/api/emergency-stop")
     def emergency_stop():
         report = halt.emergency_stop()
         desktop_safety.observe_stop()
         desktop_simulator.observe_stop()
         notepad_opener.observe_stop()
+        calculator_opener.observe_stop()
+        goal_agent.observe_stop()
+        desktop_control.observe_stop()
+        window_switcher.observe_stop()
         voice_gate.cancel()
         diagnostic.delete()
         for item in report["outcomes"]:

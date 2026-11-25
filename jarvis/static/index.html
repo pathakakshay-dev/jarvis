@@ -105,8 +105,8 @@
     #voice-state strong { margin-right: 6px; }
     #diagnostic-results { margin-top: 8px; }
     #diagnostic-results strong { display: block; }
-    .files, .agent, .desktop, .desktop-safety, .desktop-simulator, .notepad-action, .system, .apps, .clipboard { margin-top: 22px; }
-    .files h2, .agent h2, .desktop h2, .desktop-safety h2, .desktop-simulator h2, .notepad-action h2, .system h2, .apps h2, .clipboard h2 { font-size: 1rem; margin: 0; }
+    .files, .agent, .goal-agent, .desktop, .desktop-safety, .desktop-simulator, .notepad-action, .calculator-action, .desktop-control, .window-switch, .system, .apps, .clipboard { margin-top: 22px; }
+    .files h2, .agent h2, .goal-agent h2, .desktop h2, .desktop-safety h2, .desktop-simulator h2, .notepad-action h2, .calculator-action h2, .desktop-control h2, .window-switch h2, .system h2, .apps h2, .clipboard h2 { font-size: 1rem; margin: 0; }
     .file-request { display: flex; gap: 8px; margin-top: 8px; }
     .file-request input { flex: 1; padding: 10px 12px; }
     .write-form { flex-wrap: wrap; }
@@ -176,6 +176,19 @@
       <pre id="agent-preview" class="bubble file-result"></pre>
       <div id="agent-results" class="log"></div>
       <button id="agent-cancel" type="button">Cancel Plan</button>
+    </section>
+    <section class="goal-agent" id="goal-agent">
+      <h2>Goal Agent</h2>
+      <p class="hint">The assistant proposes a plan and waits. Start Plan does not approve the individual actions. Each action still needs its own approval.</p>
+      <form id="goal-form" class="file-request">
+        <input id="goal-task" type="text" maxlength="400" placeholder="List the workspace, then create notes.txt" autocomplete="off">
+        <button type="submit">Plan goal</button>
+      </form>
+      <p id="goal-status" class="hint"></p>
+      <div id="goal-steps" class="log"></div>
+      <div id="goal-actions" class="voice-controls"></div>
+      <div id="goal-results" class="log"></div>
+      <button id="goal-cancel" type="button">Cancel Agent</button>
     </section>
     <section class="desktop">
       <h2>Desktop Planner</h2>
@@ -252,6 +265,70 @@
         <button id="notepad-deny" type="button">Deny</button>
       </div>
       <p id="notepad-result" class="hint"></p>
+    </section>
+    <section class="calculator-action" id="calculator-action">
+      <h2>Open Calculator</h2>
+      <p class="hint">Real desktop action. This can open Calculator on this computer after you enable it and approve that one action.</p>
+      <p id="calculator-permission" class="hint">Open Calculator is off.</p>
+      <div class="voice-controls">
+        <button id="calculator-on" type="button">Enable Open Calculator</button>
+        <button id="calculator-off" type="button">Disable Open Calculator</button>
+      </div>
+      <p id="calculator-action-label" class="hint"></p>
+      <p id="calculator-target" class="hint"></p>
+      <div class="voice-controls">
+        <button id="calculator-request" type="button">Request Open Calculator</button>
+        <button id="calculator-approve" type="button">Approve</button>
+        <button id="calculator-deny" type="button">Deny</button>
+      </div>
+      <p id="calculator-result" class="hint"></p>
+    </section>
+    <section class="desktop-control" id="desktop-control">
+      <h2>Desktop Control</h2>
+      <p class="hint">Inspect lists open Notepad windows. Notepad does not need to be the foreground window. Choose one, then approve each action. This does not start programs and it does not use the desktop planner, the simulator, or Open Notepad.</p>
+      <p id="desktop-control-permission" class="hint">Desktop control is off.</p>
+      <div class="voice-controls">
+        <button id="desktop-control-on" type="button">Enable Desktop Control</button>
+        <button id="desktop-control-off" type="button">Disable Desktop Control</button>
+      </div>
+      <div class="voice-controls">
+        <button id="desktop-control-inspect" type="button">Inspect Notepad windows</button>
+        <button id="desktop-control-cancel" type="button">Cancel action</button>
+      </div>
+      <p id="desktop-control-status" class="hint"></p>
+      <div id="desktop-control-view" class="log"></div>
+      <form id="desktop-control-form" class="file-request">
+        <select id="desktop-control-action">
+          <option value="focus_window">Focus window</option>
+          <option value="type_text">Type text</option>
+          <option value="click_element">Click element</option>
+          <option value="key_shortcut">Select all</option>
+        </select>
+        <select id="desktop-control-target"></select>
+        <input id="desktop-control-text" type="text" maxlength="200" placeholder="Text to type" autocomplete="off">
+        <button type="submit">Preview action</button>
+      </form>
+      <div id="desktop-control-actions" class="voice-controls"></div>
+    </section>
+    <section class="window-switch" id="window-switch">
+      <h2>Window switching</h2>
+      <p class="hint">This lists open Notepad windows and, after a separate approval, focuses the one you choose. It does not type, click, or open programs.</p>
+      <p id="window-switch-permission" class="hint">Window switching is off.</p>
+      <div class="voice-controls">
+        <button id="window-switch-on" type="button">Enable window switching</button>
+        <button id="window-switch-off" type="button">Disable window switching</button>
+      </div>
+      <div class="voice-controls">
+        <button id="window-switch-find" type="button">Find Notepad windows</button>
+        <button id="window-switch-cancel" type="button">Cancel focus</button>
+      </div>
+      <p id="window-switch-status" class="hint"></p>
+      <div id="window-switch-view" class="log"></div>
+      <form id="window-switch-form" class="file-request">
+        <select id="window-switch-target"></select>
+        <button type="submit">Preview focus</button>
+      </form>
+      <div id="window-switch-actions" class="voice-controls"></div>
     </section>
     <section class="files">
       <h2>Files</h2>
@@ -511,9 +588,13 @@
           if (data.status === "stopped") {
             clearFilePanel();
             clearAgentPanel();
+            clearGoalPanel();
             clearDesktopPanel();
             clearSimulatorPanel();
             clearNotepadPanel();
+            clearCalculatorPanel();
+            clearDesktopControl();
+            clearWindowSwitch();
             clearSystemPanel();
             clearAppsPanel();
             clearClipboardPanel();
@@ -527,8 +608,12 @@
             await loadAppsSkill();
             await loadClipboardSkill();
             await loadAgentPlan();
+            await loadGoal();
             await loadSimulator();
             await loadNotepad();
+            await loadCalculator();
+            await loadDesktopControl();
+            await loadWindowSwitch();
           }
         }
       } catch (error) {
@@ -566,9 +651,13 @@
       renderBanner(lastStatus);
       clearFilePanel();
       clearAgentPanel();
+      clearGoalPanel();
       clearDesktopPanel();
       clearSimulatorPanel();
       clearNotepadPanel();
+      clearCalculatorPanel();
+      clearDesktopControl();
+      clearWindowSwitch();
       clearSystemPanel();
       clearAppsPanel();
       clearClipboardPanel();
@@ -1644,6 +1733,141 @@
       renderAgentPlan(data);
     });
 
+    function clearGoalPanel() {
+      document.getElementById("goal-status").textContent = "";
+      document.getElementById("goal-steps").replaceChildren();
+      document.getElementById("goal-actions").replaceChildren();
+      document.getElementById("goal-results").replaceChildren();
+    }
+
+    function renderGoal(data) {
+      const status = document.getElementById("goal-status");
+      const steps = document.getElementById("goal-steps");
+      const actions = document.getElementById("goal-actions");
+      const results = document.getElementById("goal-results");
+      steps.replaceChildren();
+      actions.replaceChildren();
+      results.replaceChildren();
+      if (!data || typeof data !== "object") {
+        status.textContent = "The goal could not be loaded.";
+        return;
+      }
+      status.textContent = typeof data.text === "string" ? data.text : "";
+      (data.steps || []).forEach((step) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (step.state || "pending") + " · " + (step.summary || "");
+        steps.appendChild(item);
+      });
+      (data.results || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (row.state || "") + " · " + (row.summary || "") + " · " + (row.text || "");
+        results.appendChild(item);
+      });
+      if (data.can_start === true && data.status === "proposed" && typeof data.plan_id === "string" && data.plan_id) {
+        const start = document.createElement("button");
+        start.type = "button";
+        start.id = "goal-start";
+        start.textContent = "Start Plan";
+        start.addEventListener("click", () => startGoal(data.plan_id, true));
+        actions.appendChild(start);
+      }
+      const current = data.current;
+      if (data.status === "awaiting_approval" && current && current.action_id) {
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideGoal(current.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideGoal(current.action_id, false));
+        actions.appendChild(approve);
+        actions.appendChild(deny);
+      }
+    }
+
+    function goalRequestFailed(text) {
+      renderGoal({
+        ok: false,
+        text: text,
+        status: "rejected",
+        plan_id: "",
+        can_start: false,
+        task: "",
+        steps: [],
+        current: null,
+        results: []
+      });
+    }
+
+    async function loadGoal() {
+      const response = await fetch("/api/agent/goal");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        goalRequestFailed("The goal could not be loaded.");
+        return;
+      }
+      renderGoal(data);
+    }
+
+    async function startGoal(planId, approved) {
+      const response = await fetch("/api/agent/goal/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: planId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        goalRequestFailed("The goal could not be started.");
+        return;
+      }
+      renderGoal(data);
+    }
+
+    async function decideGoal(actionId, approved) {
+      const response = await fetch("/api/agent/goal/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        goalRequestFailed("The goal action could not be updated.");
+        return;
+      }
+      renderGoal(data);
+    }
+
+    document.getElementById("goal-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("goal-task");
+      const task = input.value.trim();
+      if (!task) return;
+      const response = await fetch("/api/agent/goal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        goalRequestFailed("The goal could not be planned.");
+        return;
+      }
+      renderGoal(data);
+    });
+
+    document.getElementById("goal-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/agent/goal/cancel", { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        goalRequestFailed("The goal could not be cancelled.");
+        return;
+      }
+      renderGoal(data);
+    });
+
     function clearSimulatorPanel() {
       const proposal = document.getElementById("simulator-proposal");
       const target = document.getElementById("simulator-target");
@@ -1812,6 +2036,365 @@
     document.getElementById("notepad-request").addEventListener("click", () => requestNotepad());
     document.getElementById("notepad-approve").addEventListener("click", () => decideNotepad(true));
     document.getElementById("notepad-deny").addEventListener("click", () => decideNotepad(false));
+
+    function clearCalculatorPanel() {
+      const action = document.getElementById("calculator-action-label");
+      const target = document.getElementById("calculator-target");
+      const result = document.getElementById("calculator-result");
+      const permission = document.getElementById("calculator-permission");
+      if (action) {
+        action.textContent = "";
+        delete action.dataset.actionId;
+      }
+      if (target) target.textContent = "";
+      if (result) result.textContent = "";
+      if (permission) permission.textContent = "Open Calculator is off.";
+    }
+
+    function renderCalculator(data) {
+      const permission = document.getElementById("calculator-permission");
+      const action = document.getElementById("calculator-action-label");
+      const target = document.getElementById("calculator-target");
+      const result = document.getElementById("calculator-result");
+      if (!permission || !action || !target || !result) return;
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearCalculatorPanel();
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Open Calculator is on." : "Open Calculator is off.";
+      action.textContent = "Action: " + (data.action || "Open Calculator");
+      target.textContent = "Application: " + (data.application || "Calculator");
+      const pending = data.pending || null;
+      if (pending && pending.action_id) action.dataset.actionId = pending.action_id;
+      else delete action.dataset.actionId;
+      result.textContent = data.detail || "";
+    }
+
+    async function loadCalculator() {
+      const response = await fetch("/api/desktop/calculator");
+      if (!response.ok) return;
+      const data = await response.json().catch(() => null);
+      renderCalculator(data);
+    }
+
+    async function setCalculatorPermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/calculator/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadCalculator();
+    }
+
+    async function requestCalculator() {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/calculator", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      renderCalculator(data);
+    }
+
+    async function decideCalculator(approved) {
+      const action = document.getElementById("calculator-action-label");
+      const actionId = action && action.dataset ? action.dataset.actionId : "";
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/calculator/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderCalculator(data);
+    }
+
+    document.getElementById("calculator-on").addEventListener("click", () => setCalculatorPermission(true));
+    document.getElementById("calculator-off").addEventListener("click", () => setCalculatorPermission(false));
+    document.getElementById("calculator-request").addEventListener("click", () => requestCalculator());
+    document.getElementById("calculator-approve").addEventListener("click", () => decideCalculator(true));
+    document.getElementById("calculator-deny").addEventListener("click", () => decideCalculator(false));
+
+    function clearDesktopControl() {
+      const permission = document.getElementById("desktop-control-permission");
+      const status = document.getElementById("desktop-control-status");
+      const view = document.getElementById("desktop-control-view");
+      const actions = document.getElementById("desktop-control-actions");
+      const target = document.getElementById("desktop-control-target");
+      if (permission) permission.textContent = "Desktop control is off.";
+      if (status) status.textContent = "";
+      if (view) view.replaceChildren();
+      if (actions) actions.replaceChildren();
+      if (target) target.replaceChildren();
+    }
+
+    function renderDesktopControl(data) {
+      const permission = document.getElementById("desktop-control-permission");
+      const status = document.getElementById("desktop-control-status");
+      const view = document.getElementById("desktop-control-view");
+      const actions = document.getElementById("desktop-control-actions");
+      const target = document.getElementById("desktop-control-target");
+      if (!permission || !status || !view || !actions || !target) return;
+      view.replaceChildren();
+      actions.replaceChildren();
+      target.replaceChildren();
+      if (!data || typeof data !== "object") {
+        status.textContent = "Desktop control could not be loaded.";
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Desktop control is on. Each action still needs approval." : "Desktop control is off.";
+      status.textContent = typeof data.text === "string" ? data.text : "";
+      const observation = data.observation && data.observation.windows ? data.observation.windows : [];
+      observation.forEach((windowRow) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (windowRow.application || "") + " · " + (windowRow.title || "");
+        view.appendChild(item);
+        const windowOption = document.createElement("option");
+        windowOption.value = (windowRow.window_id || "") + " ";
+        windowOption.textContent = windowRow.title || "Notepad";
+        target.appendChild(windowOption);
+        (windowRow.elements || []).forEach((element) => {
+          const row = document.createElement("div");
+          row.className = "row";
+          row.textContent = (element.role || "") + " · " + (element.name || "");
+          view.appendChild(row);
+          const option = document.createElement("option");
+          option.value = (element.window_id || "") + " " + (element.element_id || "");
+          option.textContent = (windowRow.title || "Notepad") + " · " + (element.role || "") + " · " + (element.name || "");
+          target.appendChild(option);
+        });
+      });
+      const pending = data.pending || null;
+      if (pending && pending.action_id && pending.state === "waiting for approval") {
+        const summary = document.createElement("div");
+        summary.className = "row";
+        summary.textContent = pending.summary || "";
+        if (pending.text) summary.textContent += " Text: " + pending.text;
+        view.appendChild(summary);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideDesktopControl(pending.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideDesktopControl(pending.action_id, false));
+        actions.appendChild(approve);
+        actions.appendChild(deny);
+      }
+    }
+
+    async function loadDesktopControl() {
+      const response = await fetch("/api/desktop/control");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderDesktopControl({ permission_enabled: false, text: "Desktop control could not be loaded.", pending: null, observation: null });
+        return;
+      }
+      renderDesktopControl(data);
+    }
+
+    async function setDesktopControlPermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/control/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadDesktopControl();
+    }
+
+    async function previewDesktopControl(body) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/control/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderDesktopControl({ permission_enabled: false, text: "That desktop action is not valid.", pending: null, observation: null });
+        return;
+      }
+      renderDesktopControl(data);
+    }
+
+    async function decideDesktopControl(actionId, approved) {
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/control/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderDesktopControl({ permission_enabled: false, text: "That action is not waiting for approval.", pending: null, observation: null });
+        return;
+      }
+      renderDesktopControl(data);
+    }
+
+    document.getElementById("desktop-control-on").addEventListener("click", () => setDesktopControlPermission(true));
+    document.getElementById("desktop-control-off").addEventListener("click", () => setDesktopControlPermission(false));
+    document.getElementById("desktop-control-inspect").addEventListener("click", () => previewDesktopControl({ action: "observe" }));
+    document.getElementById("desktop-control-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/desktop/control/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      renderDesktopControl(data);
+    });
+    document.getElementById("desktop-control-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const action = document.getElementById("desktop-control-action").value;
+      const selected = document.getElementById("desktop-control-target").value || " ";
+      const parts = selected.split(" ");
+      const windowId = parts[0] || "";
+      const elementId = parts[1] || "";
+      const text = document.getElementById("desktop-control-text").value;
+      previewDesktopControl({
+        action: action,
+        window_id: windowId,
+        element_id: action === "focus_window" ? "" : elementId,
+        text: action === "type_text" ? text : "",
+        shortcut: action === "key_shortcut" ? "ctrl+a" : ""
+      });
+    });
+
+    function clearWindowSwitch() {
+      const permission = document.getElementById("window-switch-permission");
+      const status = document.getElementById("window-switch-status");
+      const view = document.getElementById("window-switch-view");
+      const actions = document.getElementById("window-switch-actions");
+      const target = document.getElementById("window-switch-target");
+      if (permission) permission.textContent = "Window switching is off.";
+      if (status) status.textContent = "";
+      if (view) view.replaceChildren();
+      if (actions) actions.replaceChildren();
+      if (target) target.replaceChildren();
+    }
+
+    function renderWindowSwitch(data) {
+      const permission = document.getElementById("window-switch-permission");
+      const status = document.getElementById("window-switch-status");
+      const view = document.getElementById("window-switch-view");
+      const actions = document.getElementById("window-switch-actions");
+      const target = document.getElementById("window-switch-target");
+      if (!permission || !status || !view || !actions || !target) return;
+      view.replaceChildren();
+      actions.replaceChildren();
+      target.replaceChildren();
+      if (!data || typeof data !== "object") {
+        status.textContent = "Window switching could not be loaded.";
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Window switching is on. Each focus still needs approval." : "Window switching is off.";
+      status.textContent = typeof data.text === "string" ? data.text : "";
+      const observation = data.observation && data.observation.windows ? data.observation.windows : [];
+      observation.forEach((windowRow) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (windowRow.application || "") + " · " + (windowRow.title || "");
+        view.appendChild(item);
+        const option = document.createElement("option");
+        option.value = windowRow.window_id || "";
+        option.textContent = windowRow.title || "Notepad";
+        target.appendChild(option);
+      });
+      const pending = data.pending || null;
+      if (pending && pending.action_id && pending.state === "waiting for approval") {
+        const summary = document.createElement("div");
+        summary.className = "row";
+        summary.textContent = pending.summary || "";
+        view.appendChild(summary);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideWindowSwitch(pending.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideWindowSwitch(pending.action_id, false));
+        actions.appendChild(approve);
+        actions.appendChild(deny);
+      }
+    }
+
+    async function loadWindowSwitch() {
+      const response = await fetch("/api/desktop/focus");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderWindowSwitch({ permission_enabled: false, text: "Window switching could not be loaded.", pending: null, observation: null });
+        return;
+      }
+      renderWindowSwitch(data);
+    }
+
+    async function setWindowSwitchPermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/focus/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadWindowSwitch();
+    }
+
+    async function previewWindowSwitch(body) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/focus/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderWindowSwitch({ permission_enabled: false, text: "That window action is not valid.", pending: null, observation: null });
+        return;
+      }
+      renderWindowSwitch(data);
+    }
+
+    async function decideWindowSwitch(actionId, approved) {
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/focus/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderWindowSwitch({ permission_enabled: false, text: "That action is not waiting for approval.", pending: null, observation: null });
+        return;
+      }
+      renderWindowSwitch(data);
+    }
+
+    document.getElementById("window-switch-on").addEventListener("click", () => setWindowSwitchPermission(true));
+    document.getElementById("window-switch-off").addEventListener("click", () => setWindowSwitchPermission(false));
+    document.getElementById("window-switch-find").addEventListener("click", () => previewWindowSwitch({ action: "observe" }));
+    document.getElementById("window-switch-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/desktop/focus/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      renderWindowSwitch(data);
+    });
+    document.getElementById("window-switch-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const windowId = document.getElementById("window-switch-target").value || "";
+      previewWindowSwitch({ action: "focus_window", window_id: windowId });
+    });
 
     document.getElementById("simulator-approve").addEventListener("click", () => decideSimulator(true));
     document.getElementById("simulator-deny").addEventListener("click", () => decideSimulator(false));

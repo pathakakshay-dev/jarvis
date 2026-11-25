@@ -1,0 +1,644 @@
+"""Open Calculator only after a fresh approval. These tests never start a real process."""
+
+from __future__ import annotations
+
+import threading
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+from starlette.testclient import TestClient as RAW_TEST_CLIENT
+
+from jarvis.audit import AuditLog
+from jarvis.config import Settings
+import jarvis.desktop.calculator as calculator_module
+from jarvis.desktop.calculator import CalculatorOpener, _keep_created_process, calculator_launch_path, launch_calculator
+
+_ORIGINAL_CREATE = calculator_module._create_process
+from jarvis.desktop.safety import EXECUTION_ENABLED
+from jarvis.main import create_app
+from jarvis.providers.fake import FakeProvider
+from jarvis.safety.halt import HaltController
+from jarvis.safety.policy import Permission
+from jarvis.skills.orchestrator import SUPPORTED_SKILLS
+from jarvis.skills.planner import _FIELDS
+
+
+@pytest.fixture(autouse=True)
+def _block_real_calculator_process(monkeypatch):
+    def blocked(*_args, **_kwargs):
+        raise AssertionError("tests must not start Calculator")
+
+    monkeypatch.setattr("jarvis.desktop.calculator._create_process", blocked)
+
+
+def _settings(tmp_path: Path) -> Settings:
+    return Settings(
+        provider="fake",
+        groq_api_key="",
+        groq_model="openai/gpt-oss-20b",
+        gemini_api_key="",
+        gemini_model="gemini-2.5-flash",
+        timeout_s=5,
+        max_steps=4,
+        tool_timeout_s=20,
+        host="127.0.0.1",
+        port=8765,
+        data_dir=tmp_path / "data",
+        root=tmp_path,
+    )
+
+
+class _Launcher:
+    def __init__(self) -> None:
+        self.generations: list[int] = []
+        self.paths: list[str] = []
+
+    def launch(self, generation: int) -> bool:
+        self.generations.append(generation)
+        return True
+
+    def start(self, path: str) -> bool:
+        self.paths.append(path)
+        return True
+
+
+def _app(tmp_path: Path, launcher: _Launcher):
+    return create_app(
+        settings=_settings(tmp_path),
+        fake=FakeProvider(),
+        start_hotkeys_flag=False,
+        transcriber=object(),
+        speaker=object(),
+        notepad_launcher=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("calculator must not launch Notepad")),
+        calculator_launcher=launcher.launch,
+    )
+
+
+def _opener(tmp_path: Path, launcher: _Launcher, *, clock=None, ttl_s: float = 120):
+    halt = HaltController()
+    opener = CalculatorOpener(
+        halt,
+        AuditLog(tmp_path / "audit.jsonl"),
+        launcher=launcher.launch,
+        clock=clock,
+        ttl_s=ttl_s,
+    )
+    return halt, opener
+
+
+def test_calculator_launch_accepts_only_the_system_binary():
+    assert calculator_launch_path(r"C:\Windows\System32") == r"C:\Windows\System32\calc.exe"
+    assert calculator_launch_path(r"C:\Windows\SysWOW64") == r"C:\Windows\SysWOW64\calc.exe"
+    rejected = [
+        r"C:\Windows\System32\cmd.exe",
+        r"C:\Windows\System32\calc.exe",
+        r"C:\Windows\System32\notepad.exe",
+        r"C:\Users\a\calc.exe",
+        r"C:\Windows\System32\..\System32",
+        "https://evil.example/calc.exe",
+        r"C:\Windows\System32\calc.exe /c notepad",
+        "calc.exe",
+        "",
+        None,
+    ]
+    for raw in rejected:
+        assert calculator_launch_path(raw) is None
+    launcher = _Launcher()
+    assert launch_calculator(system_directory=r"C:\Windows\System32", starter=launcher.start, allow=lambda: True) is True
+    assert launcher.paths == [r"C:\Windows\System32\calc.exe"]
+    for raw in rejected:
+        assert launch_calculator(system_directory=raw, starter=launcher.start, allow=lambda: True) is False
+    assert launcher.paths == [r"C:\Windows\System32\calc.exe"]
+    assert launch_calculator(system_directory=r"C:\Windows\System32", starter=launcher.start, allow=lambda: False) is False
+    assert launcher.paths == [r"C:\Windows\System32\calc.exe"]
+
+
+def test_supplied_directory_cannot_replace_the_system_binary(monkeypatch):
+    created: list[str] = []
+
+    def fake_create(path: str, allow=None) -> bool:
+        if allow is not None and not allow():
+            return False
+        created.append(path)
+        return True
+
+    monkeypatch.setattr("jarvis.desktop.calculator.read_system_directory", lambda: r"C:\Windows\System32")
+    monkeypatch.setattr("jarvis.desktop.calculator._create_process", fake_create)
+    assert launch_calculator(system_directory=r"C:\evil\System32", allow=lambda: True) is True
+    assert launch_calculator(system_directory=r"C:\Windows\System32\cmd.exe", allow=lambda: True) is True
+    assert created == [r"C:\Windows\System32\calc.exe", r"C:\Windows\System32\calc.exe"]
+
+
+def test_permission_off_blocks_and_approval_launches_once(tmp_path: Path):
+    launcher = _Launcher()
+    app = _app(tmp_path, launcher)
+    with TestClient(app) as client:
+        state = client.get("/api/desktop/calculator")
+        assert state.status_code == 200
+        assert state.json()["permission_enabled"] is False
+        assert state.json()["action"] == "Open Calculator"
+        assert state.json()["application"] == "Calculator"
+        assert state.json()["launched"] is False
+        blocked = client.post("/api/desktop/calculator", json={})
+        assert blocked.status_code == 200
+        assert blocked.json()["launched"] is False
+        assert blocked.json()["detail"] == "Open Calculator is not enabled."
+        assert launcher.generations == []
+        enabled = client.post("/api/desktop/calculator/permission", json={"enabled": True})
+        assert enabled.json() == {"permission": "calculator", "enabled": True}
+        assert app.state.policy.enabled[Permission.APP_CONTROL] is False
+        assert app.state.policy.enabled[Permission.AUTOMATE] is False
+        assert app.state.policy.enabled[Permission.APPS] is False
+        requested = client.post("/api/desktop/calculator", json={})
+        body = requested.json()
+        assert body["launched"] is False
+        assert body["pending"]["action"] == "Open Calculator"
+        assert body["pending"]["application"] == "Calculator"
+        assert body["detail"] == "Open Calculator needs approval."
+        assert launcher.generations == []
+        action_id = body["pending"]["action_id"]
+        approved = client.post("/api/desktop/calculator/confirm", json={"action_id": action_id, "approved": True})
+        assert approved.json()["launched"] is True
+        assert approved.json()["detail"] == "Calculator was opened."
+        assert len(launcher.generations) == 1
+        again = client.post("/api/desktop/calculator/confirm", json={"action_id": action_id, "approved": True})
+        assert again.json()["launched"] is False
+        assert len(launcher.generations) == 1
+        assert client.get("/api/desktop/calculator").json()["launched"] is False
+        assert EXECUTION_ENABLED is False
+        assert "/api/desktop/calculator/execute" not in {route.path for route in app.routes if hasattr(route, "path")}
+
+
+def test_arbitrary_names_paths_and_parameters_are_rejected(tmp_path: Path):
+    launcher = _Launcher()
+    halt, opener = _opener(tmp_path, launcher)
+    del halt
+    opener_result = opener.request({"application": "cmd.exe", "path": r"C:\Windows\System32\cmd.exe", "args": "/c calc"})
+    assert opener_result["launched"] is False
+    app = _app(tmp_path, launcher)
+    with TestClient(app) as client:
+        client.post("/api/desktop/calculator/permission", json={"enabled": True})
+        names = client.post("/api/desktop/calculator", json={"application": "notepad.exe"})
+        paths = client.post(
+            "/api/desktop/calculator",
+            json={"path": r"C:\Users\a\calc.exe", "url": "https://evil.example", "args": "/c notepad"},
+        )
+        confirm = client.post(
+            "/api/desktop/calculator/confirm",
+            json={"action_id": "a" * 32, "approved": True, "application": "cmd.exe", "path": r"C:\Windows\System32\cmd.exe"},
+        )
+        permission = client.post("/api/desktop/calculator/permission", json={"enabled": True, "path": r"C:\evil\app.exe"})
+        assert names.status_code == 422
+        assert paths.status_code == 422
+        assert confirm.status_code == 422
+        assert permission.status_code == 422
+        assert launcher.generations == []
+        audit = (tmp_path / "data" / "audit.jsonl").read_text(encoding="utf-8")
+        assert "cmd.exe" not in audit
+        assert "evil.example" not in audit
+
+
+def test_permission_disabled_blocks_execution(tmp_path: Path):
+    launcher = _Launcher()
+    app = _app(tmp_path, launcher)
+    with TestClient(app) as client:
+        client.post("/api/desktop/calculator/permission", json={"enabled": True})
+        requested = client.post("/api/desktop/calculator", json={})
+        action_id = requested.json()["pending"]["action_id"]
+        client.post("/api/desktop/calculator/permission", json={"enabled": False})
+        blocked = client.post("/api/desktop/calculator/confirm", json={"action_id": action_id, "approved": True})
+        assert blocked.json()["launched"] is False
+        assert blocked.json()["detail"] == "Open Calculator is not enabled."
+        assert launcher.generations == []
+        client.post("/api/desktop/calculator/permission", json={"enabled": True})
+        allowed = client.post("/api/desktop/calculator/confirm", json={"action_id": action_id, "approved": True})
+        assert allowed.json()["launched"] is True
+        assert len(launcher.generations) == 1
+
+
+def test_denial_and_cancellation_do_not_launch(tmp_path: Path):
+    launcher = _Launcher()
+    app = _app(tmp_path, launcher)
+    with TestClient(app) as client:
+        client.post("/api/desktop/calculator/permission", json={"enabled": True})
+        denied_id = client.post("/api/desktop/calculator", json={}).json()["pending"]["action_id"]
+        denied = client.post("/api/desktop/calculator/confirm", json={"action_id": denied_id, "approved": False})
+        assert denied.json()["launched"] is False
+        assert denied.json()["detail"] == "The action was denied."
+        retried = client.post("/api/desktop/calculator/confirm", json={"action_id": denied_id, "approved": True})
+        assert retried.json()["launched"] is False
+        waiting = client.post("/api/desktop/calculator", json={}).json()["pending"]["action_id"]
+        stopped = client.post("/api/emergency-stop")
+        assert stopped.json() == {"requested": True}
+        cancelled = client.post("/api/desktop/calculator/confirm", json={"action_id": waiting, "approved": True})
+        assert cancelled.json()["launched"] is False
+        assert launcher.generations == []
+
+
+def test_expired_approval_does_not_launch(tmp_path: Path):
+    launcher = _Launcher()
+    now = {"t": 0.0}
+    halt, opener = _opener(tmp_path, launcher, clock=lambda: now["t"], ttl_s=120)
+    opener.set_enabled(True)
+    requested = opener.request()
+    action_id = requested["pending"]["action_id"]
+    now["t"] = 120.0
+    expired = opener.confirm(action_id, True)
+    assert expired["launched"] is False
+    assert expired["detail"] == "That approval has expired."
+    assert launcher.generations == []
+    assert halt.approval_state(action_id) == "denied"
+
+
+def test_forged_and_duplicate_action_ids_are_rejected(tmp_path: Path):
+    launcher = _Launcher()
+    app = _app(tmp_path, launcher)
+    with TestClient(app) as client:
+        client.post("/api/desktop/calculator/permission", json={"enabled": True})
+        real_id = client.post("/api/desktop/calculator", json={}).json()["pending"]["action_id"]
+        forged = [
+            "a" * 32,
+            "g" * 32,
+            r"C:\Windows\System32\cmd.exe",
+            "calculator",
+            real_id[:-1] + ("0" if real_id[-1] != "0" else "1"),
+        ]
+        for action_id in forged:
+            response = client.post("/api/desktop/calculator/confirm", json={"action_id": action_id, "approved": True})
+            assert response.status_code in {200, 422}
+            if response.status_code == 200:
+                assert response.json()["launched"] is False
+        assert launcher.generations == []
+        approved = client.post("/api/desktop/calculator/confirm", json={"action_id": real_id, "approved": True})
+        assert approved.json()["launched"] is True
+        assert len(launcher.generations) == 1
+        duplicate = client.post("/api/desktop/calculator/confirm", json={"action_id": real_id, "approved": True})
+        assert duplicate.json()["launched"] is False
+        assert len(launcher.generations) == 1
+
+
+def test_duplicate_approval_is_single_use_under_races(tmp_path: Path):
+    launcher = _Launcher()
+    halt, opener = _opener(tmp_path, launcher)
+    del halt
+    opener.set_enabled(True)
+    action_id = opener.request()["pending"]["action_id"]
+    barrier = threading.Barrier(2)
+    results = []
+
+    def confirm() -> None:
+        barrier.wait()
+        results.append(opener.confirm(action_id, True))
+
+    threads = [threading.Thread(target=confirm) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert [item["launched"] for item in results].count(True) == 1
+    assert len(launcher.generations) == 1
+    assert opener.confirm(action_id, True)["launched"] is False
+    assert len(launcher.generations) == 1
+
+
+def test_emergency_stop_and_resume_do_not_replay(tmp_path: Path):
+    launcher = _Launcher()
+    app = _app(tmp_path, launcher)
+    with TestClient(app) as client:
+        client.post("/api/desktop/calculator/permission", json={"enabled": True})
+        action_id = client.post("/api/desktop/calculator", json={}).json()["pending"]["action_id"]
+        client.post("/api/emergency-stop")
+        resumed = client.post("/api/resume")
+        assert resumed.json() == {"resumed": True, "replayed": False}
+        replayed = client.post("/api/desktop/calculator/confirm", json={"action_id": action_id, "approved": True})
+        assert replayed.json()["launched"] is False
+        assert launcher.generations == []
+        fresh = client.post("/api/desktop/calculator", json={}).json()["pending"]["action_id"]
+        opened = client.post("/api/desktop/calculator/confirm", json={"action_id": fresh, "approved": True})
+        assert opened.json()["launched"] is True
+        assert len(launcher.generations) == 1
+        client.post("/api/emergency-stop")
+        client.post("/api/resume")
+        assert client.post("/api/desktop/calculator/confirm", json={"action_id": fresh, "approved": True}).json()["launched"] is False
+        assert len(launcher.generations) == 1
+
+
+def test_failure_does_not_launch_or_echo_the_exception(tmp_path: Path):
+    def explode(_generation: int) -> bool:
+        raise RuntimeError(r"C:\secret\calc.exe")
+
+    app = create_app(
+        settings=_settings(tmp_path),
+        fake=FakeProvider(),
+        start_hotkeys_flag=False,
+        transcriber=object(),
+        speaker=object(),
+        calculator_launcher=explode,
+    )
+    with TestClient(app) as client:
+        client.post("/api/desktop/calculator/permission", json={"enabled": True})
+        action_id = client.post("/api/desktop/calculator", json={}).json()["pending"]["action_id"]
+        failed = client.post("/api/desktop/calculator/confirm", json={"action_id": action_id, "approved": True})
+        assert failed.json()["launched"] is False
+        assert "secret" not in failed.text
+        assert client.post("/api/desktop/calculator/confirm", json={"action_id": action_id, "approved": True}).json()["launched"] is False
+
+
+def test_provider_planner_and_other_desktop_features_cannot_trigger_calculator(tmp_path: Path):
+    launcher = _Launcher()
+    app = _app(tmp_path, launcher)
+    app.state.calculator_opener.set_enabled(True)
+    with TestClient(app) as client:
+        proposed = client.post(
+            "/api/desktop/simulator/propose",
+            json={
+                "action_type": "open_application",
+                "application": "Calculator",
+                "description": "Calculator window.",
+                "summary": "Open Calculator from the Start menu.",
+                "risk": "Medium",
+            },
+        )
+        action_id = proposed.json()["proposal"]["action_id"]
+        decided = client.post("/api/desktop/simulator/decide", json={"action_id": action_id, "approved": True})
+        assert decided.json()["real_desktop"] is False
+        assert decided.json()["simulated"] is True
+        planned = client.post("/api/desktop/plan", json={"task": "Plan how to open Calculator"})
+        assert planned.status_code == 200
+        agent = client.post("/api/agent/plan", json={"task": "open calculator"})
+        assert agent.status_code == 200
+        goal = client.post("/api/agent/goal", json={"task": "Open Calculator"})
+        assert goal.status_code == 200
+        chat = client.post("/api/chat", json={"text": "Please open Calculator now"})
+        assert chat.status_code == 200
+        assert launcher.generations == []
+        assert "calculator" not in app.state.skills.ids()
+        assert "calculator" not in SUPPORTED_SKILLS
+        assert "calculator" not in _FIELDS
+        assert EXECUTION_ENABLED is False
+
+
+def test_calculator_routes_keep_authentication(tmp_path: Path):
+    launcher = _Launcher()
+    app = _app(tmp_path, launcher)
+    token = app.state.api_token
+    with RAW_TEST_CLIENT(app, base_url="http://127.0.0.1:8765") as client:
+        checks = [
+            client.get("/api/desktop/calculator"),
+            client.post("/api/desktop/calculator", json={"application": "cmd.exe", "path": r"C:\Windows\System32\cmd.exe"}),
+            client.post(
+                "/api/desktop/calculator/confirm",
+                json={"action_id": "a" * 32, "approved": True, "path": r"C:\evil\app.exe"},
+            ),
+            client.post("/api/desktop/calculator/permission", json={"enabled": True, "application": "notepad.exe"}),
+        ]
+        for response in checks:
+            assert response.status_code == 401
+            assert response.json()["detail"] == "Unauthorized."
+            assert token not in response.text
+    assert launcher.generations == []
+    assert app.state.calculator_opener.status()["permission_enabled"] is False
+
+
+def test_calculator_section_is_separate_from_notepad_and_simulator(tmp_path: Path):
+    launcher = _Launcher()
+    app = _app(tmp_path, launcher)
+    with TestClient(app) as client:
+        page = client.get("/").text
+        simulator = page.split('id="desktop-simulator"', 1)[1].split("</section>", 1)[0]
+        notepad = page.split('id="notepad-action"', 1)[1].split("</section>", 1)[0]
+        section = page.split('id="calculator-action"', 1)[1].split("</section>", 1)[0]
+        assert "Open Calculator" not in simulator
+        assert "Open Calculator" not in notepad
+        assert "Real desktop action" in section
+        assert "Open Calculator" in section
+        assert ">Approve<" in section
+        assert ">Deny<" in section
+        assert "Enable Open Calculator" in section
+        assert "<input" not in section
+        assert "speakText" not in section
+        assert "Execute" not in section
+
+
+def _production_opener(tmp_path: Path, *, clock=None):
+    halt = HaltController()
+    opener = CalculatorOpener(halt, AuditLog(tmp_path / "audit.jsonl"), clock=clock)
+    return halt, opener
+
+
+def test_permission_disable_at_the_launch_boundary_does_not_start(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(calculator_module, "read_system_directory", lambda: r"C:\Windows\System32")
+    started: list[str] = []
+    state = {"armed": True}
+    halt, opener = _production_opener(tmp_path)
+
+    def fake_create(path, allow=None):
+        if state["armed"]:
+            state["armed"] = False
+            opener.set_enabled(False)
+        if allow is not None and not allow():
+            return False
+        started.append(path)
+        return True
+
+    monkeypatch.setattr(calculator_module, "_create_process", fake_create)
+    opener.set_enabled(True)
+    action_id = opener.request()["pending"]["action_id"]
+    blocked = opener.confirm(action_id, True)
+    assert blocked["launched"] is False
+    assert blocked["detail"] == "Open Calculator is not enabled."
+    assert started == []
+    opener.set_enabled(True)
+    fresh = opener.request()["pending"]["action_id"]
+    opened = opener.confirm(fresh, True)
+    assert opened["launched"] is True
+    assert opened["detail"] == "Calculator was opened."
+    assert started == [r"C:\Windows\System32\calc.exe"]
+    assert halt.halted is False
+
+
+def test_stop_before_creation_is_cancelled_and_stop_after_start_is_opened(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(calculator_module, "read_system_directory", lambda: r"C:\Windows\System32")
+    started: list[str] = []
+    halt, opener = _production_opener(tmp_path)
+
+    def stop_before(path, allow=None):
+        halt.emergency_stop()
+        if allow is not None and not allow():
+            return False
+        started.append(path)
+        return True
+
+    monkeypatch.setattr(calculator_module, "_create_process", stop_before)
+    opener.set_enabled(True)
+    waiting = opener.request()["pending"]["action_id"]
+    cancelled = opener.confirm(waiting, True)
+    assert cancelled["launched"] is False
+    assert cancelled["detail"] == "The action was cancelled."
+    assert started == []
+    halt.resume()
+    assert opener.confirm(waiting, True)["launched"] is False
+    assert started == []
+
+    def stop_after(path, allow=None):
+        if allow is not None and not allow():
+            return False
+        started.append(path)
+        halt.emergency_stop()
+        return True
+
+    monkeypatch.setattr(calculator_module, "_create_process", stop_after)
+    opener.set_enabled(True)
+    fresh = opener.request()["pending"]["action_id"]
+    opened = opener.confirm(fresh, True)
+    assert opened["launched"] is True
+    assert opened["detail"] == "Calculator was opened."
+    assert started == [r"C:\Windows\System32\calc.exe"]
+    halt.resume()
+    assert opener.confirm(fresh, True)["launched"] is False
+    assert started == [r"C:\Windows\System32\calc.exe"]
+
+
+def test_concurrent_disable_and_stop_match_whether_creation_ran(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(calculator_module, "read_system_directory", lambda: r"C:\Windows\System32")
+    started: list[str] = []
+
+    def fake_create(path, allow=None):
+        if allow is not None and not allow():
+            return False
+        started.append(path)
+        return True
+
+    monkeypatch.setattr(calculator_module, "_create_process", fake_create)
+    for _ in range(24):
+        before = len(started)
+        halt, opener = _production_opener(tmp_path)
+        opener.set_enabled(True)
+        action_id = opener.request()["pending"]["action_id"]
+        barrier = threading.Barrier(2)
+        result: dict = {}
+
+        def confirm() -> None:
+            barrier.wait()
+            result["body"] = opener.confirm(action_id, True)
+
+        def disable() -> None:
+            barrier.wait()
+            opener.set_enabled(False)
+
+        threads = [threading.Thread(target=confirm), threading.Thread(target=disable)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        created = len(started) - before
+        body = result["body"]
+        assert created in {0, 1}
+        assert body["launched"] is (created == 1)
+        if created:
+            assert body["detail"] == "Calculator was opened."
+        else:
+            assert body["detail"] != "Calculator was opened."
+
+        halt2, opener2 = _production_opener(tmp_path)
+        opener2.set_enabled(True)
+        action_id = opener2.request()["pending"]["action_id"]
+        before = len(started)
+        barrier = threading.Barrier(2)
+        result = {}
+
+        def confirm_stop() -> None:
+            barrier.wait()
+            result["body"] = opener2.confirm(action_id, True)
+
+        def stop() -> None:
+            barrier.wait()
+            halt2.emergency_stop()
+
+        threads = [threading.Thread(target=confirm_stop), threading.Thread(target=stop)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        created = len(started) - before
+        body = result["body"]
+        assert created in {0, 1}
+        assert body["launched"] is (created == 1)
+        if created:
+            assert body["detail"] == "Calculator was opened."
+        else:
+            assert body["launched"] is False
+        halt2.resume()
+        assert opener2.confirm(action_id, True)["launched"] is False
+        assert len(started) - before == created
+
+
+def test_created_process_is_kept_or_revoked_only_by_its_own_terminate_result():
+    terminated: list[str] = []
+    assert _keep_created_process(allow=lambda: True, terminate=lambda: terminated.append("kept") or True) is True
+    assert terminated == []
+    assert _keep_created_process(allow=lambda: False, terminate=lambda: True) is False
+    assert _keep_created_process(allow=lambda: False, terminate=lambda: False) is True
+
+
+def test_creator_does_not_call_process_creation_when_authorization_fails(monkeypatch):
+    monkeypatch.setattr(calculator_module, "read_system_directory", lambda: r"C:\Windows\System32")
+    calls: list[object] = []
+
+    def fake_create(*args, **kwargs):
+        calls.append(args[0] if args else None)
+        return 0
+
+    library = calculator_module._kernel32()
+    monkeypatch.setattr(library, "CreateProcessW", fake_create)
+    path = r"C:\Windows\System32\calc.exe"
+    assert _ORIGINAL_CREATE(path, allow=lambda: False) is False
+    assert calls == []
+    assert _ORIGINAL_CREATE(r"C:\Windows\System32\cmd.exe", allow=lambda: True) is False
+    assert calls == []
+    assert _ORIGINAL_CREATE(r"C:\Windows\System32\notepad.exe", allow=lambda: True) is False
+    assert calls == []
+
+
+def test_opener_stays_isolated_from_other_desktop_features():
+    source = Path("jarvis/desktop/calculator.py").read_text(encoding="utf-8")
+    for banned in (
+        "import subprocess",
+        "from subprocess",
+        "os.system",
+        "shell=True",
+        "ShellExecute",
+        "startfile",
+        "Popen",
+        "powershell",
+        "cmd.exe",
+        "notepad.exe",
+        "pyautogui",
+        "SkillExecutor",
+        "DesktopSimulator",
+        "DesktopController",
+        "WindowSwitcher",
+        "NotepadOpener",
+        "propose_desktop_plan",
+        "jarvis.agent",
+        "Permission",
+    ):
+        assert banned not in source
+    for path in (
+        "jarvis/desktop/simulator.py",
+        "jarvis/desktop/plan.py",
+        "jarvis/desktop/safety.py",
+        "jarvis/desktop/notepad.py",
+        "jarvis/desktop/control.py",
+        "jarvis/desktop/switch.py",
+        "jarvis/skills/orchestrator.py",
+        "jarvis/skills/planner.py",
+        "jarvis/agent/goal.py",
+    ):
+        text = Path(path).read_text(encoding="utf-8")
+        assert "CalculatorOpener" not in text
+        assert "launch_calculator" not in text
+    wiring = Path("jarvis/main.py").read_text(encoding="utf-8")
+    assert "CalculatorOpener(halt, audit, launcher=calculator_launcher)" in wiring
+    assert "CalculatorOpener(skill_executor" not in wiring

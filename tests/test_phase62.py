@@ -79,6 +79,10 @@ def test_api_requires_the_process_token_and_hides_it(tmp_path: Path):
             "/api/agent/plan",
             "/api/agent/plan/confirm",
             "/api/agent/plan/cancel",
+            "/api/agent/goal",
+            "/api/agent/goal/start",
+            "/api/agent/goal/confirm",
+            "/api/agent/goal/cancel",
             "/api/memories",
             "/api/emergency-stop",
             "/api/resume",
@@ -86,6 +90,17 @@ def test_api_requires_the_process_token_and_hides_it(tmp_path: Path):
             "/api/desktop/notepad",
             "/api/desktop/notepad/confirm",
             "/api/desktop/notepad/permission",
+            "/api/desktop/calculator",
+            "/api/desktop/calculator/confirm",
+            "/api/desktop/calculator/permission",
+            "/api/desktop/control/preview",
+            "/api/desktop/control/confirm",
+            "/api/desktop/control/cancel",
+            "/api/desktop/control/permission",
+            "/api/desktop/focus/preview",
+            "/api/desktop/focus/confirm",
+            "/api/desktop/focus/cancel",
+            "/api/desktop/focus/permission",
         ):
             refused = client.post(path, json={})
             assert refused.status_code == 401

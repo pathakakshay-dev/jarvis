@@ -21,6 +21,7 @@ class FakeProvider:
         self.messages_seen: list[list[dict]] = []
         self.tool_specs_seen: list[list[dict]] = []
         self.planner_reply: str | None = None
+        self.goal_reply: str | None = None
         self.entered = threading.Event()
         self.release = threading.Event()
 
@@ -73,6 +74,11 @@ class FakeProvider:
                 error_type="already_completed",
                 text=self.reply,
             )
+        goal_task = _goal_task(messages)
+        if goal_task is not None:
+            if self.goal_reply is not None:
+                return ChatResult(ok=True, text=self.goal_reply)
+            return ChatResult(ok=False, error_type="rejected", text="That goal is not supported.")
         desktop_task = _desktop_task(messages)
         if desktop_task is not None:
             if self.planner_reply is not None:
@@ -92,6 +98,16 @@ class FakeProvider:
             except PlanError as exc:
                 return ChatResult(ok=False, error_type="rejected", text=exc.text)
         return ChatResult(ok=True, text=self.reply)
+
+
+def _goal_task(messages: list[dict]) -> str | None:
+    if not messages or not isinstance(messages[0], dict):
+        return None
+    system = messages[0].get("content")
+    if not isinstance(system, str) or not system.startswith("JARVIS goal agent."):
+        return None
+    last = messages[-1].get("content") if isinstance(messages[-1], dict) else ""
+    return last if isinstance(last, str) else ""
 
 
 def _desktop_task(messages: list[dict]) -> str | None:
