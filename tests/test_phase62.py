@@ -83,6 +83,9 @@ def test_api_requires_the_process_token_and_hides_it(tmp_path: Path):
             "/api/emergency-stop",
             "/api/resume",
             "/api/quit",
+            "/api/desktop/notepad",
+            "/api/desktop/notepad/confirm",
+            "/api/desktop/notepad/permission",
         ):
             refused = client.post(path, json={})
             assert refused.status_code == 401

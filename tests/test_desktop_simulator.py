@@ -293,6 +293,67 @@ def test_simulator_api_is_mock_only(tmp_path: Path):
         assert fake.calls == 0
 
 
+def test_default_focus_notepad_proposal_is_mock_only(tmp_path: Path):
+    launches = []
+
+    def launcher(generation: int) -> bool:
+        launches.append(generation)
+        return True
+
+    app = create_app(
+        settings=_settings(tmp_path),
+        fake=FakeProvider(),
+        start_hotkeys_flag=False,
+        transcriber=object(),
+        speaker=object(),
+        notepad_launcher=launcher,
+    )
+    with TestClient(app) as client:
+        section = client.get("/").text.split('id="desktop-simulator"', 1)[1].split("</section>", 1)[0]
+        assert 'value="focus_application"' in section
+        assert "<option>Notepad</option>" in section
+        assert 'value="Notepad window."' in section
+        assert 'value="Focus the Notepad window."' in section
+        proposed = client.post(
+            "/api/desktop/simulator/propose",
+            json={
+                "action_type": "focus_application",
+                "application": "Notepad",
+                "description": "Notepad window.",
+                "summary": "Focus the Notepad window.",
+                "risk": "Low",
+            },
+        )
+        body = proposed.json()
+        assert proposed.status_code == 200
+        assert body["ok"] is True
+        assert body["mode"] == "mock"
+        assert body["real_desktop"] is False
+        assert body["simulated"] is False
+        assert body["execution_permitted"] is False
+        assert body["proposal"]["action_type"] == "focus_application"
+        assert body["proposal"]["application"] == "Notepad"
+        assert body["proposal"]["risk"] == "Low"
+        blank = client.post(
+            "/api/desktop/simulator/propose",
+            json={
+                "action_type": "focus_application",
+                "application": "Notepad",
+                "description": "",
+                "summary": "",
+                "risk": "Low",
+            },
+        )
+        assert blank.json()["ok"] is False
+        assert blank.json()["real_desktop"] is False
+        assert blank.json()["detail"] == "That desktop action is not valid."
+        foreign = client.post("/api/desktop/simulator/propose", json=_focus(application="cmd.exe"))
+        assert foreign.json()["ok"] is False
+        assert foreign.json()["detail"] == "That desktop target is not allowed."
+        assert launches == []
+        assert EXECUTION_ENABLED is False
+
+
 def test_simulator_source_has_no_desktop_control_path():
     source = Path("jarvis/desktop/simulator.py").read_text(encoding="utf-8")
     for banned in (

@@ -42,6 +42,7 @@ _DETAILS = {
     "unknown_type": "That desktop action is not allowed.",
     "risk_mismatch": "That desktop action is not allowed.",
     "invalid_target": "That desktop target is not allowed.",
+    "invalid_text": "That desktop action is not valid.",
     "reused_id": "That desktop action is not valid.",
     "limit": "That desktop action is not valid.",
     "forged_id": "That desktop action is not waiting for approval.",
@@ -400,7 +401,7 @@ def validate_desktop_request(payload: object) -> dict:
     description = _plain(description)
     summary = _plain(summary)
     if description is None or summary is None:
-        raise _RequestError("invalid_target")
+        raise _RequestError("invalid_text")
     return {
         "action_type": action_type,
         "application": application,

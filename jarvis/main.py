@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.agent.loop import run_turn
 from jarvis.audit import AuditLog
+from jarvis.desktop.notepad import NotepadOpener
 from jarvis.desktop.plan import DesktopPlanError, propose_desktop_plan
 from jarvis.desktop.safety import DesktopSafety
 from jarvis.desktop.simulator import DesktopSimulator
@@ -119,6 +120,17 @@ class ReadPermissionIn(BaseModel):
     enabled: bool
 
 
+class NotepadDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
+class NotepadPermissionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
 CLEAR_PHRASE = "clear all memories"
 
 
@@ -134,6 +146,7 @@ def create_app(
     end_process_fn=None,
     transcriber=None,
     speaker=None,
+    notepad_launcher=None,
 ) -> FastAPI:
     settings = settings or load_settings(project_root())
     halt = halt or HaltController()
@@ -156,6 +169,7 @@ def create_app(
     audit = AuditLog(settings.data_dir / "audit.jsonl")
     desktop_safety = DesktopSafety(halt, audit)
     desktop_simulator = DesktopSimulator(desktop_safety)
+    notepad_opener = NotepadOpener(halt, audit, policy, launcher=notepad_launcher)
     skill_executor = SkillExecutor(skills, policy, halt, audit)
     orchestrator = SkillOrchestrator(
         skill_executor,
@@ -193,6 +207,7 @@ def create_app(
     app.state.audit = audit
     app.state.desktop_safety = desktop_safety
     app.state.desktop_simulator = desktop_simulator
+    app.state.notepad_opener = notepad_opener
     app.state.skill_executor = skill_executor
     app.state.orchestrator = orchestrator
     app.state.voice_gate = voice_gate
@@ -222,6 +237,7 @@ def create_app(
     def status():
         desktop_safety.observe_stop()
         desktop_simulator.observe_stop()
+        notepad_opener.observe_stop()
         body = halt.snapshot()
         provider = registry.active()
         body.update(
@@ -584,6 +600,27 @@ def create_app(
         audit.write(status="idle", detail="Desktop simulation reset")
         return result
 
+    @app.get("/api/desktop/notepad")
+    def notepad_state():
+        return notepad_opener.status()
+
+    @app.post("/api/desktop/notepad")
+    def notepad_request(_body: SystemRequestIn):
+        return notepad_opener.request()
+
+    @app.post("/api/desktop/notepad/confirm")
+    def notepad_confirm(body: NotepadDecisionIn):
+        return notepad_opener.confirm(body.action_id, body.approved)
+
+    @app.post("/api/desktop/notepad/permission")
+    def notepad_permission(body: NotepadPermissionIn):
+        policy.enabled[Permission.APP_CONTROL] = bool(body.enabled)
+        audit.write(
+            status="idle",
+            detail="Notepad permission enabled" if body.enabled else "Notepad permission disabled",
+        )
+        return {"permission": "app_control", "enabled": bool(policy.enabled[Permission.APP_CONTROL])}
+
     @app.get("/api/agent/plan")
     def agent_plan():
         return orchestrator.snapshot()
@@ -605,6 +642,7 @@ def create_app(
         report = halt.emergency_stop()
         desktop_safety.observe_stop()
         desktop_simulator.observe_stop()
+        notepad_opener.observe_stop()
         voice_gate.cancel()
         diagnostic.delete()
         for item in report["outcomes"]:

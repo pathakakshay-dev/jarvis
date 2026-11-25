@@ -105,8 +105,8 @@
     #voice-state strong { margin-right: 6px; }
     #diagnostic-results { margin-top: 8px; }
     #diagnostic-results strong { display: block; }
-    .files, .agent, .desktop, .desktop-safety, .desktop-simulator, .system, .apps, .clipboard { margin-top: 22px; }
-    .files h2, .agent h2, .desktop h2, .desktop-safety h2, .desktop-simulator h2, .system h2, .apps h2, .clipboard h2 { font-size: 1rem; margin: 0; }
+    .files, .agent, .desktop, .desktop-safety, .desktop-simulator, .notepad-action, .system, .apps, .clipboard { margin-top: 22px; }
+    .files h2, .agent h2, .desktop h2, .desktop-safety h2, .desktop-simulator h2, .notepad-action h2, .system h2, .apps h2, .clipboard h2 { font-size: 1rem; margin: 0; }
     .file-request { display: flex; gap: 8px; margin-top: 8px; }
     .file-request input { flex: 1; padding: 10px 12px; }
     .write-form { flex-wrap: wrap; }
@@ -221,8 +221,8 @@
           <option>Clock</option>
           <option>Photos</option>
         </select>
-        <input id="simulator-description" type="text" maxlength="160" placeholder="Notepad window." autocomplete="off">
-        <input id="simulator-summary" type="text" maxlength="160" placeholder="Focus the Notepad window." autocomplete="off">
+        <input id="simulator-description" type="text" maxlength="160" value="Notepad window." placeholder="Notepad window." autocomplete="off">
+        <input id="simulator-summary" type="text" maxlength="160" value="Focus the Notepad window." placeholder="Focus the Notepad window." autocomplete="off">
         <button type="submit">Propose</button>
       </form>
       <p id="simulator-proposal" class="hint"></p>
@@ -235,6 +235,23 @@
         <button id="simulator-reset" type="button">Reset simulation</button>
       </div>
       <pre id="simulator-result" class="bubble file-result"></pre>
+    </section>
+    <section class="notepad-action" id="notepad-action">
+      <h2>Open Notepad</h2>
+      <p class="hint">Real desktop action. This can open Notepad on this computer after you enable it and approve that one action.</p>
+      <p id="notepad-permission" class="hint">Open Notepad is off.</p>
+      <div class="voice-controls">
+        <button id="notepad-on" type="button">Enable Open Notepad</button>
+        <button id="notepad-off" type="button">Disable Open Notepad</button>
+      </div>
+      <p id="notepad-action-label" class="hint"></p>
+      <p id="notepad-target" class="hint"></p>
+      <div class="voice-controls">
+        <button id="notepad-request" type="button">Request Open Notepad</button>
+        <button id="notepad-approve" type="button">Approve</button>
+        <button id="notepad-deny" type="button">Deny</button>
+      </div>
+      <p id="notepad-result" class="hint"></p>
     </section>
     <section class="files">
       <h2>Files</h2>
@@ -496,6 +513,7 @@
             clearAgentPanel();
             clearDesktopPanel();
             clearSimulatorPanel();
+            clearNotepadPanel();
             clearSystemPanel();
             clearAppsPanel();
             clearClipboardPanel();
@@ -510,6 +528,7 @@
             await loadClipboardSkill();
             await loadAgentPlan();
             await loadSimulator();
+            await loadNotepad();
           }
         }
       } catch (error) {
@@ -549,6 +568,7 @@
       clearAgentPanel();
       clearDesktopPanel();
       clearSimulatorPanel();
+      clearNotepadPanel();
       clearSystemPanel();
       clearAppsPanel();
       clearClipboardPanel();
@@ -1711,6 +1731,87 @@
       const data = await response.json().catch(() => ({}));
       renderSimulator(data);
     });
+
+    function clearNotepadPanel() {
+      const action = document.getElementById("notepad-action-label");
+      const target = document.getElementById("notepad-target");
+      const result = document.getElementById("notepad-result");
+      const permission = document.getElementById("notepad-permission");
+      if (action) {
+        action.textContent = "";
+        delete action.dataset.actionId;
+      }
+      if (target) target.textContent = "";
+      if (result) result.textContent = "";
+      if (permission) permission.textContent = "Open Notepad is off.";
+    }
+
+    function renderNotepad(data) {
+      const permission = document.getElementById("notepad-permission");
+      const action = document.getElementById("notepad-action-label");
+      const target = document.getElementById("notepad-target");
+      const result = document.getElementById("notepad-result");
+      if (!permission || !action || !target || !result) return;
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearNotepadPanel();
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Open Notepad is on." : "Open Notepad is off.";
+      action.textContent = "Action: " + (data.action || "Open Notepad");
+      target.textContent = "Application: " + (data.application || "Notepad");
+      const pending = data.pending || null;
+      if (pending && pending.action_id) action.dataset.actionId = pending.action_id;
+      else delete action.dataset.actionId;
+      result.textContent = data.detail || "";
+    }
+
+    async function loadNotepad() {
+      const response = await fetch("/api/desktop/notepad");
+      if (!response.ok) return;
+      const data = await response.json().catch(() => null);
+      renderNotepad(data);
+    }
+
+    async function setNotepadPermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/notepad/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadNotepad();
+    }
+
+    async function requestNotepad() {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/notepad", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      renderNotepad(data);
+    }
+
+    async function decideNotepad(approved) {
+      const action = document.getElementById("notepad-action-label");
+      const actionId = action && action.dataset ? action.dataset.actionId : "";
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/notepad/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderNotepad(data);
+    }
+
+    document.getElementById("notepad-on").addEventListener("click", () => setNotepadPermission(true));
+    document.getElementById("notepad-off").addEventListener("click", () => setNotepadPermission(false));
+    document.getElementById("notepad-request").addEventListener("click", () => requestNotepad());
+    document.getElementById("notepad-approve").addEventListener("click", () => decideNotepad(true));
+    document.getElementById("notepad-deny").addEventListener("click", () => decideNotepad(false));
 
     document.getElementById("simulator-approve").addEventListener("click", () => decideSimulator(true));
     document.getElementById("simulator-deny").addEventListener("click", () => decideSimulator(false));
