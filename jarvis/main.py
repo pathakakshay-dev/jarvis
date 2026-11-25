@@ -614,12 +614,12 @@ def create_app(
 
     @app.post("/api/desktop/notepad/permission")
     def notepad_permission(body: NotepadPermissionIn):
-        policy.enabled[Permission.APP_CONTROL] = bool(body.enabled)
+        enabled = notepad_opener.set_enabled(bool(body.enabled))
         audit.write(
             status="idle",
-            detail="Notepad permission enabled" if body.enabled else "Notepad permission disabled",
+            detail="Notepad permission enabled" if enabled else "Notepad permission disabled",
         )
-        return {"permission": "app_control", "enabled": bool(policy.enabled[Permission.APP_CONTROL])}
+        return {"permission": "app_control", "enabled": enabled}
 
     @app.get("/api/agent/plan")
     def agent_plan():

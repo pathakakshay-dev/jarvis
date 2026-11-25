@@ -11,7 +11,10 @@ from starlette.testclient import TestClient as RAW_TEST_CLIENT
 
 from jarvis.audit import AuditLog
 from jarvis.config import Settings
-from jarvis.desktop.notepad import NotepadOpener, launch_notepad, notepad_launch_path
+import jarvis.desktop.notepad as notepad_module
+from jarvis.desktop.notepad import NotepadOpener, _keep_created_process, launch_notepad, notepad_launch_path
+
+_ORIGINAL_CREATE = notepad_module._create_process
 from jarvis.desktop.safety import EXECUTION_ENABLED
 from jarvis.main import create_app
 from jarvis.providers.fake import FakeProvider
@@ -403,6 +406,185 @@ def test_notepad_section_is_separate_from_the_simulator(tmp_path: Path):
         assert "Enable Open Notepad" in section
         assert "<input" not in section
         assert "speakText" not in section
+
+
+def _production_opener(tmp_path: Path, *, clock=None):
+    halt = HaltController()
+    policy = Policy(tmp_path)
+    opener = NotepadOpener(halt, AuditLog(tmp_path / "audit.jsonl"), policy, clock=clock)
+    return halt, policy, opener
+
+
+def test_permission_disable_at_the_launch_boundary_does_not_start(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(notepad_module, "read_system_directory", lambda: r"C:\Windows\System32")
+    started: list[str] = []
+    state = {"armed": True}
+    halt, _policy, opener = _production_opener(tmp_path)
+
+    def fake_create(path, allow=None):
+        if state["armed"]:
+            state["armed"] = False
+            opener.set_enabled(False)
+        if allow is not None and not allow():
+            return False
+        started.append(path)
+        return True
+
+    monkeypatch.setattr(notepad_module, "_create_process", fake_create)
+    opener.set_enabled(True)
+    action_id = opener.request()["pending"]["action_id"]
+    blocked = opener.confirm(action_id, True)
+    assert blocked["launched"] is False
+    assert blocked["detail"] == "Open Notepad is not enabled."
+    assert started == []
+    opener.set_enabled(True)
+    fresh = opener.request()["pending"]["action_id"]
+    opened = opener.confirm(fresh, True)
+    assert opened["launched"] is True
+    assert opened["detail"] == "Notepad was opened."
+    assert started == [r"C:\Windows\System32\notepad.exe"]
+    assert halt.halted is False
+
+
+def test_stop_before_creation_is_cancelled_and_stop_after_start_is_opened(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(notepad_module, "read_system_directory", lambda: r"C:\Windows\System32")
+    started: list[str] = []
+    halt, _policy, opener = _production_opener(tmp_path)
+
+    def stop_before(path, allow=None):
+        halt.emergency_stop()
+        if allow is not None and not allow():
+            return False
+        started.append(path)
+        return True
+
+    monkeypatch.setattr(notepad_module, "_create_process", stop_before)
+    opener.set_enabled(True)
+    waiting = opener.request()["pending"]["action_id"]
+    cancelled = opener.confirm(waiting, True)
+    assert cancelled["launched"] is False
+    assert cancelled["detail"] == "The action was cancelled."
+    assert started == []
+    halt.resume()
+    assert opener.confirm(waiting, True)["launched"] is False
+    assert started == []
+
+    def stop_after(path, allow=None):
+        if allow is not None and not allow():
+            return False
+        started.append(path)
+        halt.emergency_stop()
+        return True
+
+    monkeypatch.setattr(notepad_module, "_create_process", stop_after)
+    opener.set_enabled(True)
+    fresh = opener.request()["pending"]["action_id"]
+    opened = opener.confirm(fresh, True)
+    assert opened["launched"] is True
+    assert opened["detail"] == "Notepad was opened."
+    assert started == [r"C:\Windows\System32\notepad.exe"]
+    halt.resume()
+    assert opener.confirm(fresh, True)["launched"] is False
+    assert started == [r"C:\Windows\System32\notepad.exe"]
+
+
+def test_concurrent_disable_and_stop_match_whether_creation_ran(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(notepad_module, "read_system_directory", lambda: r"C:\Windows\System32")
+    started: list[str] = []
+
+    def fake_create(path, allow=None):
+        if allow is not None and not allow():
+            return False
+        started.append(path)
+        return True
+
+    monkeypatch.setattr(notepad_module, "_create_process", fake_create)
+    for _ in range(24):
+        before = len(started)
+        halt, _policy, opener = _production_opener(tmp_path)
+        opener.set_enabled(True)
+        action_id = opener.request()["pending"]["action_id"]
+        barrier = threading.Barrier(2)
+        result: dict = {}
+
+        def confirm() -> None:
+            barrier.wait()
+            result["body"] = opener.confirm(action_id, True)
+
+        def disable() -> None:
+            barrier.wait()
+            opener.set_enabled(False)
+
+        threads = [threading.Thread(target=confirm), threading.Thread(target=disable)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        created = len(started) - before
+        body = result["body"]
+        assert created in {0, 1}
+        assert body["launched"] is (created == 1)
+        if created:
+            assert body["detail"] == "Notepad was opened."
+        else:
+            assert body["detail"] != "Notepad was opened."
+
+        halt2, _policy2, opener2 = _production_opener(tmp_path)
+        opener2.set_enabled(True)
+        action_id = opener2.request()["pending"]["action_id"]
+        before = len(started)
+        barrier = threading.Barrier(2)
+        result = {}
+
+        def confirm_stop() -> None:
+            barrier.wait()
+            result["body"] = opener2.confirm(action_id, True)
+
+        def stop() -> None:
+            barrier.wait()
+            halt2.emergency_stop()
+
+        threads = [threading.Thread(target=confirm_stop), threading.Thread(target=stop)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        created = len(started) - before
+        body = result["body"]
+        assert created in {0, 1}
+        assert body["launched"] is (created == 1)
+        if created:
+            assert body["detail"] == "Notepad was opened."
+        else:
+            assert body["launched"] is False
+        halt2.resume()
+        assert opener2.confirm(action_id, True)["launched"] is False
+        assert len(started) - before == created
+
+
+def test_created_process_is_kept_or_revoked_only_by_its_own_terminate_result():
+    terminated: list[str] = []
+    assert _keep_created_process(allow=lambda: True, terminate=lambda: terminated.append("kept") or True) is True
+    assert terminated == []
+    assert _keep_created_process(allow=lambda: False, terminate=lambda: True) is False
+    assert _keep_created_process(allow=lambda: False, terminate=lambda: False) is True
+
+
+def test_creator_does_not_call_process_creation_when_authorization_fails(monkeypatch):
+    monkeypatch.setattr(notepad_module, "read_system_directory", lambda: r"C:\Windows\System32")
+    calls: list[object] = []
+
+    def fake_create(*args, **kwargs):
+        calls.append(args[0] if args else None)
+        return 0
+
+    library = notepad_module._kernel32()
+    monkeypatch.setattr(library, "CreateProcessW", fake_create)
+    path = r"C:\Windows\System32\notepad.exe"
+    assert _ORIGINAL_CREATE(path, allow=lambda: False) is False
+    assert calls == []
+    assert _ORIGINAL_CREATE(r"C:\Windows\System32\cmd.exe", allow=lambda: True) is False
+    assert calls == []
 
 
 def test_opener_stays_isolated_from_planner_and_simulator():

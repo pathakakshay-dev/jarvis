@@ -43,7 +43,7 @@ class NotepadOpener:
         self._pending: dict[str, _Pending] = {}
         self._used: set[str] = set()
         self._detail = ""
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def status(self) -> dict:
         with self._lock:
@@ -148,18 +148,16 @@ class NotepadOpener:
                 return self._reply(False, "The action was cancelled.", launched=False)
             generation = item.generation
             self._consume_locked(action_id)
-        if not self._halt.is_current(generation):
-            self._audit.write(status="notepad_cancelled", outcome="cancelled", detail="Notepad open cancelled")
-            return self._reply(False, "The action was cancelled.", launched=False)
-        try:
-            launched = bool(self._launcher(generation))
-        except Exception:
-            launched = False
-        if not self._halt.is_current(generation) or not launched:
-            self._audit.write(status="notepad_rejected", outcome="rejected", error_type="failed", detail="Notepad was not opened")
-            return self._reply(False, "Notepad was not opened.", launched=False)
-        self._audit.write(status="notepad_opened", outcome="completed", detail="Notepad opened")
-        return self._reply(True, "Notepad was opened.", launched=True)
+            if not self._launch_allowed_locked(generation):
+                return self._blocked_launch_locked(generation)
+            try:
+                launched = bool(self._launcher(generation))
+            except Exception:
+                launched = False
+            if launched:
+                self._audit.write(status="notepad_opened", outcome="completed", detail="Notepad opened")
+                return self._reply(True, "Notepad was opened.", launched=True)
+            return self._blocked_launch_locked(generation)
 
     def observe_stop(self) -> None:
         with self._lock:
@@ -174,8 +172,28 @@ class NotepadOpener:
             body["pending"] = pending
         return body
 
+    def set_enabled(self, enabled: bool) -> bool:
+        """Toggle Open Notepad under the same lock as the launch boundary."""
+        with self._lock:
+            self._policy.enabled[Permission.APP_CONTROL] = bool(enabled)
+            return self._enabled()
+
     def _production_launch(self, generation: int) -> bool:
-        return launch_notepad(allow=lambda: self._halt.is_current(generation))
+        return launch_notepad(allow=lambda: self._launch_allowed_locked(generation))
+
+    def _launch_allowed_locked(self, generation: int) -> bool:
+        """Final authorization: this generation is current and Open Notepad is enabled."""
+        return self._halt.is_current(generation) and self._enabled()
+
+    def _blocked_launch_locked(self, generation: int) -> dict:
+        if not self._halt.is_current(generation):
+            self._audit.write(status="notepad_cancelled", outcome="cancelled", detail="Notepad open cancelled")
+            return self._reply(False, "The action was cancelled.", launched=False)
+        if not self._enabled():
+            self._audit.write(status="notepad_rejected", outcome="rejected", error_type="disabled", detail="Notepad open is not enabled")
+            return self._reply(False, "Open Notepad is not enabled.", launched=False)
+        self._audit.write(status="notepad_rejected", outcome="rejected", error_type="failed", detail="Notepad was not opened")
+        return self._reply(False, "Notepad was not opened.", launched=False)
 
     def _enabled(self) -> bool:
         return bool(self._policy.enabled.get(Permission.APP_CONTROL))
@@ -269,6 +287,19 @@ def read_system_directory() -> str:
     return buffer.value
 
 
+def _keep_created_process(allow, terminate) -> bool:
+    """Decide whether the process created by this call stays running.
+
+    terminate is invoked only for that new process. It is not a search for
+    other Notepad windows. If terminate fails, the process is still running
+    and the launch is reported as started. A successful terminate request
+    does not wait for the process to exit.
+    """
+    if allow is None or allow():
+        return True
+    return not bool(terminate())
+
+
 def _create_process(path: str, *, allow=None) -> bool:
     if not isinstance(path, str) or not path.endswith("\\" + _FILE_NAME):
         return False
@@ -297,14 +328,10 @@ def _create_process(path: str, *, allow=None) -> bool:
     )
     if not created:
         return False
-    if allow is not None and not allow():
-        _kernel32().TerminateProcess(process.hProcess, 1)
-        _kernel32().CloseHandle(process.hThread)
-        _kernel32().CloseHandle(process.hProcess)
-        return False
+    keep = _keep_created_process(allow, lambda: _kernel32().TerminateProcess(process.hProcess, 1))
     _kernel32().CloseHandle(process.hThread)
     _kernel32().CloseHandle(process.hProcess)
-    return True
+    return keep
 
 
 class _STARTUPINFOW(ctypes.Structure):
