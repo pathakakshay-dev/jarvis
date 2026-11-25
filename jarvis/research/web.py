@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import ipaddress
 import re
 import socket
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from urllib.parse import urlparse
 
-from jarvis.safety.halt import HaltController
+from jarvis.safety.halt import HaltController, OutboundResult
+from jarvis.safety.net import PinnedTransport, resolve_public_https
 from jarvis.skills.base import SkillSpec
 from jarvis.safety.policy import Permission
 
@@ -110,11 +109,12 @@ class WebResearch:
             if opened >= MAX_PAGES:
                 source.note = "Page was not opened."
                 continue
-            if not public_https_url(source.url, self.resolver):
+            target = resolve_public_https(source.url, self.resolver)
+            if target is None:
                 source.note = "Page was not retrieved."
                 continue
             opened += 1
-            page = self._read_page(source.url, halt, generation)
+            page = self._read_page(source.url, halt, generation, self.page_transport or PinnedTransport(target.ip, target.hostname))
             if page is None:
                 return ResearchPacket(False, [], error_type="cancelled", text="")
             status, body, content_type = page
@@ -131,19 +131,26 @@ class WebResearch:
         return ResearchPacket(True, sources, evidence=build_evidence(cleaned, sources))
 
     def _search(self, query: str, halt: HaltController):
+        search_url = BRAVE_SEARCH_URL if self.provider == "brave" else TAVILY_SEARCH_URL
+        transport = self.search_transport
+        if transport is None:
+            target = resolve_public_https(search_url, self.resolver)
+            if target is None:
+                return OutboundResult(outcome="http_error")
+            transport = PinnedTransport(target.ip, target.hostname)
         if self.provider == "brave":
             return halt.guarded_get(
-                BRAVE_SEARCH_URL,
+                search_url,
                 headers={
                     "Accept": "application/json",
                     "X-Subscription-Token": self.api_key,
                 },
                 params={"q": query[:300], "count": MAX_RESULTS},
                 timeout=SEARCH_TIMEOUT_S,
-                transport=self.search_transport,
+                transport=transport,
             )
         return halt.guarded_post(
-            TAVILY_SEARCH_URL,
+            search_url,
             headers={
                 "Content-Type": "application/json",
                 "X-Tavily-Access-Mode": "keyless",
@@ -154,22 +161,22 @@ class WebResearch:
                 "include_answer": False,
             },
             timeout=SEARCH_TIMEOUT_S,
-            transport=self.search_transport,
+            transport=transport,
         )
 
-    def _read_page(self, url: str, halt: HaltController, generation: int) -> tuple[int, str, str] | None:
+    def _read_page(self, url: str, halt: HaltController, generation: int, transport) -> tuple[int, str, str] | None:
         result = halt.guarded_get(
             url,
             headers={"Accept": "text/html,text/plain", "User-Agent": "JARVIS-research"},
             timeout=PAGE_TIMEOUT_S,
-            transport=self.page_transport,
+            transport=transport,
         )
         if not halt.is_current(generation) or result.outcome in {"cancelled", "already_completed"}:
             return None
         if result.outcome != "ok" or result.response is None:
             return 0, "", ""
         response = result.response
-        if response.status_code != 200:
+        if response.is_redirect or response.status_code != 200:
             return response.status_code, "", ""
         raw = response.content[:MAX_PAGE_BYTES]
         content_type = response.headers.get("content-type", "")
@@ -229,47 +236,7 @@ def parse_tavily_results(payload: dict) -> list[Source]:
 
 
 def public_https_url(url: str, resolver) -> bool:
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.username or parsed.password:
-        return False
-    host = (parsed.hostname or "").strip().lower().rstrip(".")
-    if not host or host == "localhost" or host.endswith(".local") or host.endswith(".localhost"):
-        return False
-    if parsed.port not in {None, 443}:
-        return False
-    try:
-        literal = ipaddress.ip_address(host)
-    except ValueError:
-        literal = None
-    if literal is not None:
-        return not _blocked_ip(literal)
-    try:
-        records = resolver(host, 443, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except socket.gaierror:
-        return False
-    addresses = []
-    for record in records:
-        sockaddr = record[4]
-        if not sockaddr:
-            return False
-        addresses.append(sockaddr[0])
-    if not addresses:
-        return False
-    try:
-        return all(not _blocked_ip(ipaddress.ip_address(address)) for address in addresses)
-    except ValueError:
-        return False
-
-
-def _blocked_ip(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return bool(
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_multicast
-        or address.is_reserved
-        or address.is_unspecified
-    )
+    return resolve_public_https(url, resolver) is not None
 
 
 class _VisibleText(HTMLParser):

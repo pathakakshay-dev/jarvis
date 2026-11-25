@@ -7,13 +7,19 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from jarvis.safety.secrets import redact_known_secrets
+
 _BEARER = re.compile(r"(?i)bearer\s+\S+")
+_SK = re.compile(r"sk-[A-Za-z0-9]{8,}")
 _SECRET = re.compile(r"(?i)(api[_-]?key|authorization|x-goog-api-key)\s*[:=]?\s*\S+")
+_ASSIGNED = re.compile(r"(?i)(password|token)\s*[:=]\s*\S+")
 
 
 def scrub(text: str) -> str:
     text = _BEARER.sub("bearer [redacted]", text)
-    return _SECRET.sub(lambda match: match.group(1) + "=[redacted]", text)
+    text = _SK.sub("sk-[redacted]", text)
+    text = _SECRET.sub(lambda match: match.group(1) + "=[redacted]", text)
+    return redact_known_secrets(_ASSIGNED.sub(lambda match: match.group(1) + "=[redacted]", text))
 
 
 class AuditLog:
@@ -33,7 +39,7 @@ class AuditLog:
         row = {
             "time": datetime.now(timezone.utc).isoformat(),
             "status": status,
-            "skill_id": skill_id,
+            "skill_id": scrub(skill_id)[:80],
             "outcome": outcome,
             "error_type": error_type,
             "detail": scrub(detail)[:500],

@@ -31,6 +31,27 @@ class _FileError(Exception):
         self.error_type = error_type
 
 
+def _is_reparse(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        return bool(callable(is_junction) and is_junction())
+    except OSError:
+        return True
+
+
+def _path_has_link(workspace: Path, raw: str) -> bool:
+    current = workspace.resolve()
+    for part in Path(raw).parts:
+        if part in {"", ".", ".."}:
+            return True
+        current = current / part
+        if _is_reparse(current):
+            return True
+    return False
+
+
 class ReadFile:
     spec = SkillSpec(
         id="read_file",
@@ -65,6 +86,8 @@ def read_workspace_text(workspace: Path, raw: str) -> str:
     requested = Path(raw.strip()).suffix.lower()
     if requested not in _ALLOWED:
         raise _FileError("Only .txt and .md files can be read.", "unsupported_type")
+    if _path_has_link(workspace, raw.strip()):
+        raise _FileError("That file is outside the workspace.", "outside_workspace")
     try:
         resolved = resolve_inside(workspace, raw.strip())
     except PermissionError as exc:
@@ -75,6 +98,13 @@ def read_workspace_text(workspace: Path, raw: str) -> str:
         raise _FileError("That path is not a file.", "not_a_file")
     if not resolved.is_file():
         raise _FileError("That file was not found.", "not_found")
+    try:
+        if resolved.stat().st_nlink > 1:
+            raise _FileError("That file is outside the workspace.", "outside_workspace")
+    except _FileError:
+        raise
+    except OSError as exc:
+        raise _FileError("That file could not be read.", "read_error") from exc
     try:
         with resolved.open("rb") as handle:
             payload = handle.read(MAX_FILE_BYTES + 1)
@@ -131,6 +161,8 @@ def list_workspace(workspace: Path, raw: str) -> str:
         if ".." in Path(text).parts:
             raise _FileError("That folder is outside the workspace.", "outside_workspace")
         relative = text
+        if _path_has_link(workspace, relative):
+            raise _FileError("That folder is outside the workspace.", "outside_workspace")
     try:
         resolved = resolve_inside(workspace, relative)
     except PermissionError as exc:
@@ -155,7 +187,7 @@ def list_workspace(workspace: Path, raw: str) -> str:
 def _list_name(path: Path) -> str:
     name = path.name.replace("\r", " ").replace("\n", " ")
     try:
-        folder = path.is_dir()
+        folder = path.is_dir(follow_symlinks=False) and not _is_reparse(path)
     except OSError:
         folder = False
     return name + ("/" if folder else "")
@@ -237,7 +269,7 @@ def search_workspace(workspace: Path, raw: object, halt: HaltController) -> str:
                 capped = True
                 return
             visits += 1
-            if _points_outside(root, Path(entry.path)):
+            if _is_reparse(Path(entry.path)) or _points_outside(root, Path(entry.path)):
                 continue
             name = _safe_filename(entry.name)
             if query.casefold() in name.casefold():
@@ -249,13 +281,13 @@ def search_workspace(workspace: Path, raw: object, halt: HaltController) -> str:
                         return
             if depth >= MAX_SEARCH_DEPTH:
                 try:
-                    if entry.is_dir(follow_symlinks=False) and not entry.is_symlink():
+                    if entry.is_dir(follow_symlinks=False) and not _is_reparse(Path(entry.path)):
                         depth_limited = True
                 except OSError:
                     pass
                 continue
             try:
-                if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                if _is_reparse(Path(entry.path)) or not entry.is_dir(follow_symlinks=False):
                     continue
             except OSError:
                 continue
@@ -378,7 +410,7 @@ def write_workspace_text(workspace: Path, raw: object, content: object, mode: ob
         raise _FileError("That file already exists. Approve an overwrite to replace it.", "already_exists")
     if mode == "overwrite" and not exists:
         raise _FileError("That file is no longer there.", "not_found")
-    if halt.halted or target.is_symlink():
+    if halt.halted or _is_reparse(target):
         if halt.halted:
             raise _Stopped()
         raise _FileError("That file is outside the workspace.", "outside_workspace")
@@ -413,7 +445,7 @@ def _create_file(target: Path, data: bytes) -> None:
 
 def _replace_file(target: Path, data: bytes, halt: HaltController) -> None:
     temporary = target.with_name("." + target.stem + "-" + uuid.uuid4().hex + target.suffix)
-    if temporary.suffix.lower() not in _ALLOWED or temporary.is_symlink():
+    if temporary.suffix.lower() not in _ALLOWED or _is_reparse(temporary):
         raise _FileError("That file could not be written.", "write_error")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
     try:
@@ -427,11 +459,11 @@ def _replace_file(target: Path, data: bytes, halt: HaltController) -> None:
         _remove_written(temporary)
         raise
     os.close(descriptor)
-    if halt.halted or target.is_symlink() or not target.is_file():
+    if halt.halted or _is_reparse(target) or not target.is_file():
         _remove_written(temporary)
         if halt.halted:
             raise _Stopped()
-        if target.is_symlink():
+        if _is_reparse(target):
             raise _FileError("That file is outside the workspace.", "outside_workspace")
         raise _FileError("That file is no longer there.", "not_found")
     try:
@@ -455,7 +487,7 @@ def _write_all(descriptor: int, data: bytes) -> None:
 
 def _remove_written(path: Path) -> None:
     try:
-        if path.is_symlink() or not path.exists():
+        if _is_reparse(path) or not path.exists():
             return
         path.unlink()
     except OSError:
@@ -479,7 +511,7 @@ def _locate_write(workspace: Path, raw: object) -> Path:
         current = current / part
         _reject_link(root, current, missing_is_error=True)
     target = current / path.parts[-1]
-    if target.is_symlink():
+    if _is_reparse(target):
         raise _FileError("That file is outside the workspace.", "outside_workspace")
     if target.exists() and not target.is_file():
         raise _FileError("That path is not a file.", "not_a_file")
@@ -491,7 +523,7 @@ def _locate_write(workspace: Path, raw: object) -> Path:
 
 
 def _reject_link(root: Path, current: Path, missing_is_error: bool) -> None:
-    if current.is_symlink():
+    if _is_reparse(current):
         raise _FileError("That file is outside the workspace.", "outside_workspace")
     if not current.exists():
         if missing_is_error:
@@ -620,7 +652,7 @@ def _reject_folder_name(part: str) -> None:
 
 
 def _reject_existing_folder(target: Path) -> None:
-    if target.is_symlink():
+    if _is_reparse(target):
         raise _FileError("That folder is outside the workspace.", "outside_workspace")
     if not target.exists():
         return

@@ -7,11 +7,14 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.agent.loop import run_turn
 from jarvis.audit import AuditLog
+from jarvis.desktop.plan import DesktopPlanError, propose_desktop_plan
+from jarvis.desktop.safety import DesktopSafety
+from jarvis.desktop.simulator import DesktopSimulator
 from jarvis.config import Settings, load_settings, project_root
 from jarvis.memory.commands import validate_fact
 from jarvis.memory.store import ConversationStore
@@ -19,6 +22,7 @@ from jarvis.providers import build_registry
 from jarvis.providers.fake import FakeProvider
 from jarvis.research.web import WebResearch
 from jarvis.safety.halt import HaltController
+from jarvis.safety.local_auth import api_allowed, local_page_allowed, new_api_token
 from jarvis.safety.hotkey import start_hotkeys
 from jarvis.safety.policy import Permission, Policy
 from jarvis.skills.base import SkillResult
@@ -33,6 +37,10 @@ from jarvis.skills.files import (
     classify_write,
     prepare_folder,
 )
+from jarvis.skills.apps import AppInventory
+from jarvis.skills.clipboard import ClipboardRead
+from jarvis.skills.orchestrator import SkillOrchestrator
+from jarvis.skills.system import SystemInfo
 from jarvis.skills.registry import SkillRegistry
 from jarvis.voice.diagnostic import (
     CONSENT_HEADER,
@@ -86,6 +94,27 @@ class SkillDecisionIn(BaseModel):
     approved: bool
 
 
+class AgentTaskIn(BaseModel):
+    task: str = Field(max_length=800)
+
+
+class DesktopTaskIn(BaseModel):
+    task: str = Field(max_length=400)
+
+
+class DesktopSimIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_type: str = Field(max_length=40)
+    application: str = Field(max_length=40)
+    description: str = Field(max_length=160)
+    summary: str = Field(max_length=160)
+    risk: str = Field(max_length=10)
+
+
+class SystemRequestIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 class ReadPermissionIn(BaseModel):
     enabled: bool
 
@@ -119,10 +148,25 @@ def create_app(
     skills.register(SearchFiles(workspace, halt))
     skills.register(WriteFile(workspace, halt))
     skills.register(CreateFolder(workspace, halt))
+    skills.register(SystemInfo(halt))
+    skills.register(AppInventory(halt))
+    skills.register(ClipboardRead(halt))
     policy = Policy(settings.root)
     store = ConversationStore(settings.data_dir / "jarvis.sqlite3")
     audit = AuditLog(settings.data_dir / "audit.jsonl")
+    desktop_safety = DesktopSafety(halt, audit)
+    desktop_simulator = DesktopSimulator(desktop_safety)
     skill_executor = SkillExecutor(skills, policy, halt, audit)
+    orchestrator = SkillOrchestrator(
+        skill_executor,
+        skills,
+        halt,
+        audit,
+        workspace,
+        policy,
+        registry.active,
+        settings.timeout_s,
+    )
     voice_gate = VoiceGate()
     diagnostic = DiagnosticStore(settings.data_dir / "diagnostic")
     diagnostic.discard()
@@ -136,7 +180,8 @@ def create_app(
     if start_hotkeys_flag:
         start_hotkeys(halt, stopper)
 
-    app = FastAPI(title="JARVIS", docs_url=None, redoc_url=None)
+    app = FastAPI(title="JARVIS", docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.api_token = new_api_token()
     app.state.settings = settings
     app.state.halt = halt
     app.state.fake = fake
@@ -146,19 +191,37 @@ def create_app(
     app.state.policy = policy
     app.state.store = store
     app.state.audit = audit
+    app.state.desktop_safety = desktop_safety
+    app.state.desktop_simulator = desktop_simulator
     app.state.skill_executor = skill_executor
+    app.state.orchestrator = orchestrator
     app.state.voice_gate = voice_gate
     app.state.diagnostic = diagnostic
     app.state.transcriber = transcriber
     app.state.speaker = speaker
     app.state.end_process = stopper
 
+    @app.middleware("http")
+    async def require_local_client(request: Request, call_next):
+        port = settings.port
+        if not local_page_allowed(request, port):
+            return JSONResponse({"detail": "Unauthorized."}, status_code=401)
+        if request.url.path.startswith("/api/") and not api_allowed(request, app.state.api_token, port):
+            return JSONResponse({"detail": "Unauthorized."}, status_code=401)
+        return await call_next(request)
+
     @app.get("/")
     def index():
-        return FileResponse(STATIC_DIR / "index.html")
+        raw = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        token = app.state.api_token
+        if raw.count("__JARVIS_TOKEN__") != 1:
+            return Response(status_code=500, content="The page is unavailable.")
+        return HTMLResponse(raw.replace("__JARVIS_TOKEN__", token, 1))
 
     @app.get("/api/status")
     def status():
+        desktop_safety.observe_stop()
+        desktop_simulator.observe_stop()
         body = halt.snapshot()
         provider = registry.active()
         body.update(
@@ -250,9 +313,16 @@ def create_app(
             "path": path,
         }
 
+    def _plan_action(action_id: str) -> bool:
+        return bool(action_id) and action_id == orchestrator.current_action_id()
+
+    def _visible_pending(skill: str) -> list[dict]:
+        hidden = orchestrator.current_action_id()
+        return [row for row in skill_executor.pending() if row["skill"] == skill and row["action_id"] != hidden]
+
     def _confirm_skill(action_id: str, approved: bool, skill: str) -> dict:
         path = skill_executor.requested_path(action_id, skill)
-        if skill_executor.pending_skill(action_id) != skill:
+        if _plan_action(action_id) or skill_executor.pending_skill(action_id) != skill:
             result = SkillResult(
                 False,
                 text="That action is not waiting for approval.",
@@ -264,7 +334,7 @@ def create_app(
 
     @app.get("/api/skills/read")
     def read_skill_state():
-        pending = [row for row in skill_executor.pending() if row["skill"] == "read_file"]
+        pending = _visible_pending("read_file")
         return {"permission_enabled": bool(policy.enabled[Permission.READ]), "pending": pending}
 
     @app.post("/api/skills/read")
@@ -291,7 +361,7 @@ def create_app(
 
     @app.get("/api/skills/list")
     def list_skill_state():
-        pending = [row for row in skill_executor.pending() if row["skill"] == "list_files"]
+        pending = _visible_pending("list_files")
         return {"permission_enabled": bool(policy.enabled[Permission.LIST]), "pending": pending}
 
     @app.post("/api/skills/list")
@@ -316,7 +386,7 @@ def create_app(
 
     @app.get("/api/skills/search")
     def search_skill_state():
-        pending = [row for row in skill_executor.pending() if row["skill"] == "search_files"]
+        pending = _visible_pending("search_files")
         return {"permission_enabled": bool(policy.enabled[Permission.SEARCH]), "pending": pending}
 
     @app.post("/api/skills/search")
@@ -343,7 +413,7 @@ def create_app(
 
     @app.get("/api/skills/write")
     def write_skill_state():
-        pending = [row for row in skill_executor.pending() if row["skill"] == "write_file"]
+        pending = _visible_pending("write_file")
         return {"permission_enabled": bool(policy.enabled[Permission.WRITE]), "pending": pending}
 
     @app.post("/api/skills/write")
@@ -378,7 +448,7 @@ def create_app(
 
     @app.get("/api/skills/folder")
     def folder_skill_state():
-        pending = [row for row in skill_executor.pending() if row["skill"] == "create_folder"]
+        pending = _visible_pending("create_folder")
         return {"permission_enabled": bool(policy.enabled[Permission.FOLDER]), "pending": pending}
 
     @app.post("/api/skills/folder")
@@ -408,9 +478,133 @@ def create_app(
         )
         return {"permission": "folder", "enabled": bool(policy.enabled[Permission.FOLDER])}
 
+    @app.get("/api/skills/system")
+    def system_skill_state():
+        pending = _visible_pending("system_info")
+        return {"permission_enabled": bool(policy.enabled[Permission.SYSTEM]), "pending": pending}
+
+    @app.post("/api/skills/system")
+    def request_system(_body: SystemRequestIn):
+        result = skill_executor.submit("system_info", {})
+        return _skill_payload(result, "", "system_info")
+
+    @app.post("/api/skills/system/confirm")
+    def confirm_system(body: SkillDecisionIn):
+        return _confirm_skill(body.action_id, body.approved, "system_info")
+
+    @app.post("/api/skills/system/permission")
+    def set_system_permission(body: ReadPermissionIn):
+        policy.enabled[Permission.SYSTEM] = bool(body.enabled)
+        audit.write(
+            status="idle",
+            skill_id="system_info",
+            detail="System information permission enabled" if body.enabled else "System information permission disabled",
+        )
+        return {"permission": "system", "enabled": bool(policy.enabled[Permission.SYSTEM])}
+
+    @app.get("/api/skills/apps")
+    def apps_skill_state():
+        pending = _visible_pending("app_inventory")
+        return {"permission_enabled": bool(policy.enabled[Permission.APPS]), "pending": pending}
+
+    @app.post("/api/skills/apps")
+    def request_apps(_body: SystemRequestIn):
+        result = skill_executor.submit("app_inventory", {})
+        return _skill_payload(result, "", "app_inventory")
+
+    @app.post("/api/skills/apps/confirm")
+    def confirm_apps(body: SkillDecisionIn):
+        return _confirm_skill(body.action_id, body.approved, "app_inventory")
+
+    @app.post("/api/skills/apps/permission")
+    def set_apps_permission(body: ReadPermissionIn):
+        policy.enabled[Permission.APPS] = bool(body.enabled)
+        audit.write(
+            status="idle",
+            skill_id="app_inventory",
+            detail="Application list permission enabled" if body.enabled else "Application list permission disabled",
+        )
+        return {"permission": "apps", "enabled": bool(policy.enabled[Permission.APPS])}
+
+    @app.get("/api/skills/clipboard")
+    def clipboard_skill_state():
+        pending = _visible_pending("clipboard_read")
+        return {"permission_enabled": bool(policy.enabled[Permission.CLIPBOARD]), "pending": pending}
+
+    @app.post("/api/skills/clipboard")
+    def request_clipboard(_body: SystemRequestIn):
+        result = skill_executor.submit("clipboard_read", {})
+        return _skill_payload(result, "", "clipboard_read")
+
+    @app.post("/api/skills/clipboard/confirm")
+    def confirm_clipboard(body: SkillDecisionIn):
+        return _confirm_skill(body.action_id, body.approved, "clipboard_read")
+
+    @app.post("/api/skills/clipboard/permission")
+    def set_clipboard_permission(body: ReadPermissionIn):
+        policy.enabled[Permission.CLIPBOARD] = bool(body.enabled)
+        audit.write(
+            status="idle",
+            skill_id="clipboard_read",
+            detail="Clipboard permission enabled" if body.enabled else "Clipboard permission disabled",
+        )
+        return {"permission": "clipboard", "enabled": bool(policy.enabled[Permission.CLIPBOARD])}
+
+    @app.post("/api/desktop/plan")
+    def desktop_plan(body: DesktopTaskIn):
+        if halt.halted:
+            raise HTTPException(status_code=409, detail="The assistant is stopped.")
+        try:
+            plan = propose_desktop_plan(body.task, registry.active(), halt, settings.timeout_s)
+        except DesktopPlanError as exc:
+            audit.write(status="idle", detail="Desktop plan refused")
+            return {"ok": False, "detail": exc.text}
+        audit.write(status="idle", detail="Desktop plan prepared")
+        return {"ok": True, "plan": plan}
+
+    @app.get("/api/desktop/safety")
+    def desktop_safety_status():
+        return desktop_safety.report()
+
+    @app.get("/api/desktop/simulator")
+    def desktop_simulator_state():
+        return desktop_simulator.snapshot()
+
+    @app.post("/api/desktop/simulator/propose")
+    def desktop_simulator_propose(body: DesktopSimIn):
+        return desktop_simulator.propose(body.model_dump())
+
+    @app.post("/api/desktop/simulator/decide")
+    def desktop_simulator_decide(body: SkillDecisionIn):
+        return desktop_simulator.decide(body.action_id, body.approved)
+
+    @app.post("/api/desktop/simulator/reset")
+    def desktop_simulator_reset(_body: SystemRequestIn):
+        result = desktop_simulator.reset()
+        audit.write(status="idle", detail="Desktop simulation reset")
+        return result
+
+    @app.get("/api/agent/plan")
+    def agent_plan():
+        return orchestrator.snapshot()
+
+    @app.post("/api/agent/plan")
+    def start_agent_plan(body: AgentTaskIn):
+        return orchestrator.start(body.task)
+
+    @app.post("/api/agent/plan/confirm")
+    def confirm_agent_plan(body: SkillDecisionIn):
+        return orchestrator.confirm(body.action_id, body.approved)
+
+    @app.post("/api/agent/plan/cancel")
+    def cancel_agent_plan():
+        return orchestrator.cancel()
+
     @app.post("/api/emergency-stop")
     def emergency_stop():
         report = halt.emergency_stop()
+        desktop_safety.observe_stop()
+        desktop_simulator.observe_stop()
         voice_gate.cancel()
         diagnostic.delete()
         for item in report["outcomes"]:

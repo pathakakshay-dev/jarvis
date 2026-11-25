@@ -57,7 +57,7 @@ def _from_openai(result, generation: int, halt: HaltController) -> ChatResult:
     if result.outcome == "http_error":
         return ChatResult(ok=False, error_type="http_error", text="That failed: the provider could not be reached.")
     response = result.response
-    if response is None:
+    if response is None or 300 <= response.status_code < 400:
         return ChatResult(ok=False, error_type="http_error", text="That failed: the provider could not be reached.")
     if result.outcome == "already_completed":
         return ChatResult(ok=False, outcome="already_completed", error_type="already_completed", text=_safe_text(response))

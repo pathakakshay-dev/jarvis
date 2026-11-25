@@ -8,6 +8,8 @@ from typing import Any
 
 import httpx
 
+from jarvis.safety.net import select_transport
+
 
 class HaltedError(RuntimeError):
     """Raised when new work is requested after Emergency Stop."""
@@ -168,10 +170,14 @@ class HaltController:
         json_body: dict,
         timeout: float,
         transport: httpx.BaseTransport | None = None,
+        resolver=None,
     ) -> OutboundResult:
         if not self.allow_outbound():
             return OutboundResult(outcome="cancelled")
-        client = httpx.Client(timeout=timeout, transport=transport)
+        chosen = select_transport(url, transport, resolver)
+        if chosen is None:
+            return OutboundResult(outcome="http_error")
+        client = httpx.Client(timeout=timeout, transport=chosen, follow_redirects=False, trust_env=False)
         self.register_client(client)
         try:
             if not self.allow_outbound():
@@ -203,10 +209,14 @@ class HaltController:
         params: dict | None = None,
         timeout: float,
         transport: httpx.BaseTransport | None = None,
+        resolver=None,
     ) -> OutboundResult:
         if not self.allow_outbound():
             return OutboundResult(outcome="cancelled")
-        client = httpx.Client(timeout=timeout, transport=transport, follow_redirects=False)
+        chosen = select_transport(url, transport, resolver)
+        if chosen is None:
+            return OutboundResult(outcome="http_error")
+        client = httpx.Client(timeout=timeout, transport=chosen, follow_redirects=False, trust_env=False)
         self.register_client(client)
         try:
             if not self.allow_outbound():

@@ -168,7 +168,7 @@ def test_app_keeps_research_off_the_executor(tmp_path: Path):
         speaker=object(),
     )
     catalog = app.state.skill_executor.catalog()
-    assert [row["name"] for row in catalog] == ["web_research", "read_file", "list_files", "search_files", "write_file", "create_folder"]
+    assert [row["name"] for row in catalog] == ["web_research", "read_file", "list_files", "search_files", "write_file", "create_folder", "system_info", "app_inventory", "clipboard_read"]
     assert all(row["enabled"] is False for row in catalog)
     assert catalog[1]["permission"] == "read"
     assert catalog[2]["permission"] == "list"

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="jarvis-token" content="__JARVIS_TOKEN__">
   <title>JARVIS</title>
   <style>
     :root {
@@ -104,8 +105,8 @@
     #voice-state strong { margin-right: 6px; }
     #diagnostic-results { margin-top: 8px; }
     #diagnostic-results strong { display: block; }
-    .files { margin-top: 22px; }
-    .files h2 { font-size: 1rem; margin: 0; }
+    .files, .agent, .desktop, .desktop-safety, .desktop-simulator, .system, .apps, .clipboard { margin-top: 22px; }
+    .files h2, .agent h2, .desktop h2, .desktop-safety h2, .desktop-simulator h2, .system h2, .apps h2, .clipboard h2 { font-size: 1rem; margin: 0; }
     .file-request { display: flex; gap: 8px; margin-top: 8px; }
     .file-request input { flex: 1; padding: 10px 12px; }
     .write-form { flex-wrap: wrap; }
@@ -162,6 +163,79 @@
     </form>
     <p class="hint">Send uses the model only. Research searches the web for this message, or you can start it with research:.</p>
     <div id="thread" class="thread"></div>
+    <section class="agent">
+      <h2>Agent</h2>
+      <p class="hint">The assistant proposes a plan from your task. Nothing runs until you approve the current action. Approving one action does not approve the next one.</p>
+      <form id="agent-form" class="file-request">
+        <input id="agent-task" type="text" maxlength="800" placeholder="Create a project-notes folder and create planning.md inside it" autocomplete="off">
+        <button type="submit">Plan task</button>
+      </form>
+      <p id="agent-status" class="hint"></p>
+      <div id="agent-steps" class="log"></div>
+      <div id="agent-actions" class="voice-controls"></div>
+      <pre id="agent-preview" class="bubble file-result"></pre>
+      <div id="agent-results" class="log"></div>
+      <button id="agent-cancel" type="button">Cancel Plan</button>
+    </section>
+    <section class="desktop">
+      <h2>Desktop Planner</h2>
+      <p class="hint">This prepares a manual plan for a desktop task. It does not open applications, type, click, or run any skill.</p>
+      <form id="desktop-form" class="file-request">
+        <input id="desktop-task" type="text" maxlength="400" placeholder="Plan how to open Notepad and write a note." autocomplete="off">
+        <button type="submit">Plan desktop task</button>
+      </form>
+      <p id="desktop-status" class="hint"></p>
+      <pre id="desktop-plan" class="bubble file-result"></pre>
+    </section>
+    <section class="desktop-safety" id="desktop-safety">
+      <h2>Desktop Automation Safety</h2>
+      <p class="hint">This is a safety foundation. It checks future desktop requests and does not control the computer.</p>
+      <p id="desktop-safety-foundation" class="hint">Safety foundation: Active</p>
+      <p id="desktop-safety-execution" class="hint">Desktop execution: Disabled</p>
+      <p id="desktop-safety-approval" class="hint">Approval policy: Each action needs its own explicit approval. Approving one action does not approve the next one.</p>
+      <p id="desktop-safety-risk" class="hint">Risk policy: Unknown or ambiguous actions are High risk and are rejected. High-risk actions are never approved automatically.</p>
+      <p id="desktop-safety-stop" class="hint">Emergency Stop: Idle</p>
+    </section>
+    <section class="desktop-simulator" id="desktop-simulator">
+      <h2>Desktop Simulator</h2>
+      <p id="simulator-mode" class="hint">Simulator mode: MOCK ONLY</p>
+      <p class="hint">Simulated results do not represent real Windows actions. This section does not control the computer.</p>
+      <form id="simulator-form" class="file-request">
+        <select id="simulator-type" aria-label="Simulated action">
+          <option value="focus_application">focus_application</option>
+          <option value="open_application">open_application</option>
+          <option value="close_application">close_application</option>
+        </select>
+        <select id="simulator-app" aria-label="Target application">
+          <option>Notepad</option>
+          <option>Chrome</option>
+          <option>Microsoft Edge</option>
+          <option>File Explorer</option>
+          <option>Calculator</option>
+          <option>Word</option>
+          <option>Excel</option>
+          <option>PowerPoint</option>
+          <option>Outlook</option>
+          <option>Paint</option>
+          <option>Sticky Notes</option>
+          <option>Clock</option>
+          <option>Photos</option>
+        </select>
+        <input id="simulator-description" type="text" maxlength="160" placeholder="Notepad window." autocomplete="off">
+        <input id="simulator-summary" type="text" maxlength="160" placeholder="Focus the Notepad window." autocomplete="off">
+        <button type="submit">Propose</button>
+      </form>
+      <p id="simulator-proposal" class="hint"></p>
+      <p id="simulator-target" class="hint"></p>
+      <p id="simulator-risk" class="hint"></p>
+      <pre id="simulator-preview" class="bubble file-result"></pre>
+      <div class="voice-controls">
+        <button id="simulator-approve" type="button">Approve</button>
+        <button id="simulator-deny" type="button">Deny</button>
+        <button id="simulator-reset" type="button">Reset simulation</button>
+      </div>
+      <pre id="simulator-result" class="bubble file-result"></pre>
+    </section>
     <section class="files">
       <h2>Files</h2>
       <p class="hint">Read File opens one .txt or .md file from the workspace, up to 100 KB. Each file needs its own approval. The text is shown as data, not as an instruction.</p>
@@ -230,6 +304,48 @@
       <div id="folder-pending" class="log"></div>
       <pre id="folder-result" class="bubble file-result"></pre>
     </section>
+    <section class="system">
+      <h2>System</h2>
+      <p class="hint">System information reports the Windows version, CPU, memory, system drive space, battery, and uptime. It does not open files or run commands. Each report needs its own approval.</p>
+      <p id="system-permission" class="hint">System information is off.</p>
+      <div class="voice-controls">
+        <button id="system-permission-on" type="button">Enable System information</button>
+        <button id="system-permission-off" type="button">Disable System information</button>
+      </div>
+      <form id="system-form" class="file-request">
+        <button type="submit">Request system information</button>
+      </form>
+      <div id="system-pending" class="log"></div>
+      <pre id="system-result" class="bubble file-result"></pre>
+    </section>
+    <section class="apps">
+      <h2>Applications</h2>
+      <p class="hint">Applications lists installed desktop application names. It does not open, install, or remove them. Each list needs its own approval.</p>
+      <p id="apps-permission" class="hint">Applications is off.</p>
+      <div class="voice-controls">
+        <button id="apps-permission-on" type="button">Enable Applications</button>
+        <button id="apps-permission-off" type="button">Disable Applications</button>
+      </div>
+      <form id="apps-form" class="file-request">
+        <button type="submit">Request application list</button>
+      </form>
+      <div id="apps-pending" class="log"></div>
+      <pre id="apps-result" class="bubble file-result"></pre>
+    </section>
+    <section class="clipboard">
+      <h2>Clipboard</h2>
+      <p class="hint">Clipboard may contain passwords, OTPs, tokens or private information. JARVIS will read the current text clipboard only after your approval. The content will not be sent to an AI provider or saved automatically.</p>
+      <p id="clipboard-permission" class="hint">Clipboard is off.</p>
+      <div class="voice-controls">
+        <button id="clipboard-permission-on" type="button">Enable Clipboard</button>
+        <button id="clipboard-permission-off" type="button">Disable Clipboard</button>
+      </div>
+      <form id="clipboard-form" class="file-request">
+        <button type="submit">Request clipboard text</button>
+      </form>
+      <div id="clipboard-pending" class="log"></div>
+      <pre id="clipboard-result" class="bubble file-result"></pre>
+    </section>
     <section class="memory">
       <h2>Memories</h2>
       <p class="hint">Stored facts stay separate from chat. Nothing is saved unless you ask.</p>
@@ -258,6 +374,16 @@
     <p class="hint">If Emergency Stop cannot be confirmed, use End process. If the window is frozen, press Ctrl+Alt+Shift+K, or end Python in Task Manager. Resume does not continue old tasks.</p>
   </main>
   <script>
+    const jarvisToken = document.querySelector('meta[name="jarvis-token"]').getAttribute("content") || "";
+    const jarvisFetch = window.fetch.bind(window);
+    window.fetch = function (url, options) {
+      const opts = options ? Object.assign({}, options) : {};
+      const headers = new Headers(opts.headers || {});
+      const target = typeof url === "string" ? url : "";
+      if (target.indexOf("/api/") !== -1) headers.set("X-Jarvis-Token", jarvisToken);
+      opts.headers = headers;
+      return jarvisFetch(url, opts);
+    };
     const LABELS = {
       idle: "Idle",
       listening: "Listening",
@@ -332,6 +458,7 @@
           const data = await response.json();
           lastStatus = data.status;
           polled = data.status;
+          renderDesktopSafety(data);
           document.getElementById("hotkey").textContent = data.hotkey_note || "";
           const notice = document.getElementById("notice");
           notice.hidden = !data.gemini_notice;
@@ -364,13 +491,25 @@
             item.textContent = row.action + " · " + row.outcome;
             log.appendChild(item);
           });
-          if (data.status === "stopped") clearFilePanel();
-          else {
+          if (data.status === "stopped") {
+            clearFilePanel();
+            clearAgentPanel();
+            clearDesktopPanel();
+            clearSimulatorPanel();
+            clearSystemPanel();
+            clearAppsPanel();
+            clearClipboardPanel();
+          } else {
             await loadFileSkill();
             await loadListSkill();
             await loadSearchSkill();
             await loadWriteSkill();
             await loadFolderSkill();
+            await loadSystemSkill();
+            await loadAppsSkill();
+            await loadClipboardSkill();
+            await loadAgentPlan();
+            await loadSimulator();
           }
         }
       } catch (error) {
@@ -407,6 +546,12 @@
       setVoice("Stopped", "Voice is stopped. Resume does not replay speech.");
       renderBanner(lastStatus);
       clearFilePanel();
+      clearAgentPanel();
+      clearDesktopPanel();
+      clearSimulatorPanel();
+      clearSystemPanel();
+      clearAppsPanel();
+      clearClipboardPanel();
       try {
         await fetch("/api/emergency-stop", { method: "POST" });
       } catch (error) {
@@ -1141,6 +1286,503 @@
       if (!data || data.outcome !== "needs_approval") showFolderResult(data);
       else document.getElementById("folder-result").textContent = "";
       await loadFolderSkill();
+    });
+
+    function clearSystemPanel() {
+      const result = document.getElementById("system-result");
+      const pending = document.getElementById("system-pending");
+      if (result) result.textContent = "";
+      if (pending) pending.replaceChildren();
+    }
+
+    async function loadSystemSkill() {
+      const response = await fetch("/api/skills/system");
+      if (!response.ok) return;
+      const data = await response.json();
+      const status = document.getElementById("system-permission");
+      status.textContent = data.permission_enabled
+        ? "System information is on. Each report still needs its own approval."
+        : "System information is off.";
+      const list = document.getElementById("system-pending");
+      list.replaceChildren();
+      (data.pending || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row file-actions";
+        const label = document.createElement("span");
+        label.textContent = "System information";
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideSystem(row.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.className = "danger";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideSystem(row.action_id, false));
+        item.append(label, approve, deny);
+        list.appendChild(item);
+      });
+    }
+
+    function showSystemResult(data) {
+      const result = document.getElementById("system-result");
+      if (!data || data.outcome === "cancelled" || lastStatus === "stopped" || stopRequestedAt !== null) {
+        result.textContent = "";
+        return;
+      }
+      if (typeof data.text === "string") result.textContent = data.text;
+      else if (typeof data.detail === "string") result.textContent = data.detail;
+      else result.textContent = "System information is unavailable.";
+    }
+
+    async function decideSystem(actionId, approved) {
+      const response = await fetch("/api/skills/system/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      showSystemResult(data);
+      await loadSystemSkill();
+      await poll();
+    }
+
+    async function setSystemPermission(enabled) {
+      await fetch("/api/skills/system/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      await loadSystemSkill();
+    }
+
+    document.getElementById("system-permission-on").addEventListener("click", () => setSystemPermission(true));
+    document.getElementById("system-permission-off").addEventListener("click", () => setSystemPermission(false));
+    document.getElementById("system-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const response = await fetch("/api/skills/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!data || data.outcome !== "needs_approval") showSystemResult(data);
+      else document.getElementById("system-result").textContent = "";
+      await loadSystemSkill();
+    });
+
+    function clearAppsPanel() {
+      const result = document.getElementById("apps-result");
+      const pending = document.getElementById("apps-pending");
+      if (result) result.textContent = "";
+      if (pending) pending.replaceChildren();
+    }
+
+    async function loadAppsSkill() {
+      const response = await fetch("/api/skills/apps");
+      if (!response.ok) return;
+      const data = await response.json();
+      const status = document.getElementById("apps-permission");
+      status.textContent = data.permission_enabled
+        ? "Applications is on. Each list still needs its own approval."
+        : "Applications is off.";
+      const list = document.getElementById("apps-pending");
+      list.replaceChildren();
+      (data.pending || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row file-actions";
+        const label = document.createElement("span");
+        label.textContent = "Application list";
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideApps(row.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.className = "danger";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideApps(row.action_id, false));
+        item.append(label, approve, deny);
+        list.appendChild(item);
+      });
+    }
+
+    function showAppsResult(data) {
+      const result = document.getElementById("apps-result");
+      if (!data || data.outcome === "cancelled" || lastStatus === "stopped" || stopRequestedAt !== null) {
+        result.textContent = "";
+        return;
+      }
+      if (typeof data.text === "string") result.textContent = data.text;
+      else if (typeof data.detail === "string") result.textContent = data.detail;
+      else result.textContent = "Installed applications are unavailable.";
+    }
+
+    async function decideApps(actionId, approved) {
+      const response = await fetch("/api/skills/apps/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      showAppsResult(data);
+      await loadAppsSkill();
+      await poll();
+    }
+
+    async function setAppsPermission(enabled) {
+      await fetch("/api/skills/apps/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      await loadAppsSkill();
+    }
+
+    document.getElementById("apps-permission-on").addEventListener("click", () => setAppsPermission(true));
+    document.getElementById("apps-permission-off").addEventListener("click", () => setAppsPermission(false));
+    document.getElementById("apps-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const response = await fetch("/api/skills/apps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!data || data.outcome !== "needs_approval") showAppsResult(data);
+      else document.getElementById("apps-result").textContent = "";
+      await loadAppsSkill();
+    });
+
+    function clearClipboardPanel() {
+      const result = document.getElementById("clipboard-result");
+      const pending = document.getElementById("clipboard-pending");
+      if (result) result.textContent = "";
+      if (pending) pending.replaceChildren();
+    }
+
+    async function loadClipboardSkill() {
+      const response = await fetch("/api/skills/clipboard");
+      if (!response.ok) return;
+      const data = await response.json();
+      const status = document.getElementById("clipboard-permission");
+      status.textContent = data.permission_enabled
+        ? "Clipboard is on. Each read still needs its own approval."
+        : "Clipboard is off.";
+      const list = document.getElementById("clipboard-pending");
+      list.replaceChildren();
+      (data.pending || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row file-actions";
+        const label = document.createElement("span");
+        label.textContent = "Clipboard text";
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideClipboard(row.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.className = "danger";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideClipboard(row.action_id, false));
+        item.append(label, approve, deny);
+        list.appendChild(item);
+      });
+    }
+
+    function showClipboardResult(data) {
+      const result = document.getElementById("clipboard-result");
+      if (!data || data.outcome === "cancelled" || lastStatus === "stopped" || stopRequestedAt !== null) {
+        result.textContent = "";
+        return;
+      }
+      if (typeof data.text === "string") result.textContent = data.text;
+      else if (typeof data.detail === "string") result.textContent = data.detail;
+      else result.textContent = "The clipboard is unavailable.";
+    }
+
+    async function decideClipboard(actionId, approved) {
+      const response = await fetch("/api/skills/clipboard/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      showClipboardResult(data);
+      await loadClipboardSkill();
+      await poll();
+    }
+
+    async function setClipboardPermission(enabled) {
+      await fetch("/api/skills/clipboard/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      await loadClipboardSkill();
+    }
+
+    document.getElementById("clipboard-permission-on").addEventListener("click", () => setClipboardPermission(true));
+    document.getElementById("clipboard-permission-off").addEventListener("click", () => setClipboardPermission(false));
+    document.getElementById("clipboard-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const response = await fetch("/api/skills/clipboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!data || data.outcome !== "needs_approval") showClipboardResult(data);
+      else document.getElementById("clipboard-result").textContent = "";
+      await loadClipboardSkill();
+    });
+
+    function clearAgentPanel() {
+      document.getElementById("agent-status").textContent = "";
+      document.getElementById("agent-steps").replaceChildren();
+      document.getElementById("agent-actions").replaceChildren();
+      document.getElementById("agent-preview").textContent = "";
+      document.getElementById("agent-results").replaceChildren();
+    }
+
+    function renderAgentPlan(data) {
+      const status = document.getElementById("agent-status");
+      const steps = document.getElementById("agent-steps");
+      const actions = document.getElementById("agent-actions");
+      const preview = document.getElementById("agent-preview");
+      const results = document.getElementById("agent-results");
+      steps.replaceChildren();
+      actions.replaceChildren();
+      results.replaceChildren();
+      preview.textContent = "";
+      if (!data || typeof data !== "object") {
+        status.textContent = "The plan could not be loaded.";
+        return;
+      }
+      status.textContent = typeof data.text === "string" ? data.text : "";
+      (data.steps || []).forEach((step) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (step.state || "") + " · " + (step.summary || "");
+        steps.appendChild(item);
+      });
+      (data.results || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (row.summary || "") + " · " + (row.text || "");
+        results.appendChild(item);
+      });
+      const current = data.current;
+      if (data.status === "awaiting_approval" && current && current.action_id) {
+        if (typeof current.content === "string") preview.textContent = current.content;
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideAgent(current.action_id, true));
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideAgent(current.action_id, false));
+        actions.appendChild(approve);
+        actions.appendChild(deny);
+      }
+    }
+
+    async function loadAgentPlan() {
+      const response = await fetch("/api/agent/plan");
+      const data = await response.json().catch(() => ({}));
+      renderAgentPlan(data);
+    }
+
+    async function decideAgent(actionId, approved) {
+      const response = await fetch("/api/agent/plan/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderAgentPlan(data);
+    }
+
+    document.getElementById("agent-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("agent-task");
+      const task = input.value.trim();
+      if (!task) return;
+      const response = await fetch("/api/agent/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderAgentPlan(data);
+    });
+
+    document.getElementById("agent-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/agent/plan/cancel", { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      renderAgentPlan(data);
+    });
+
+    function clearSimulatorPanel() {
+      const proposal = document.getElementById("simulator-proposal");
+      const target = document.getElementById("simulator-target");
+      const risk = document.getElementById("simulator-risk");
+      const preview = document.getElementById("simulator-preview");
+      const result = document.getElementById("simulator-result");
+      if (proposal) {
+        proposal.textContent = "";
+        delete proposal.dataset.actionId;
+      }
+      if (target) target.textContent = "";
+      if (risk) risk.textContent = "";
+      if (preview) preview.textContent = "";
+      if (result) result.textContent = "";
+    }
+
+    function renderSimulator(data) {
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearSimulatorPanel();
+        return;
+      }
+      const proposal = document.getElementById("simulator-proposal");
+      const target = document.getElementById("simulator-target");
+      const risk = document.getElementById("simulator-risk");
+      const preview = document.getElementById("simulator-preview");
+      const result = document.getElementById("simulator-result");
+      const row = data.proposal || null;
+      if (!row) {
+        proposal.textContent = "";
+        delete proposal.dataset.actionId;
+        target.textContent = "";
+        risk.textContent = "";
+        preview.textContent = "";
+      } else {
+        proposal.dataset.actionId = row.action_id || "";
+        proposal.textContent = "Proposed action: " + (row.summary || row.action_type || "");
+        target.textContent = "Target application: " + (row.application || "");
+        risk.textContent = "Risk: " + (row.risk || "");
+        preview.textContent = row.preview || "";
+      }
+      const open = (data.open_applications || []).join(", ");
+      const focused = data.focused ? " Focused: " + data.focused + "." : "";
+      let outcome = data.result || "";
+      if (!outcome && data.detail) outcome = data.detail;
+      if (data.ok === false && data.detail) outcome = data.detail;
+      result.textContent = "Simulated result: " + outcome + (open ? " Open in the mock desktop: " + open + "." : "") + focused;
+    }
+
+    async function loadSimulator() {
+      const response = await fetch("/api/desktop/simulator");
+      if (!response.ok) return;
+      const data = await response.json().catch(() => null);
+      renderSimulator(data);
+    }
+
+    async function decideSimulator(approved) {
+      const proposal = document.getElementById("simulator-proposal");
+      const actionId = proposal && proposal.dataset ? proposal.dataset.actionId : "";
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/simulator/decide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderSimulator(data);
+    }
+
+    document.getElementById("simulator-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const risks = { focus_application: "Low", open_application: "Medium", close_application: "High" };
+      const actionType = document.getElementById("simulator-type").value;
+      const response = await fetch("/api/desktop/simulator/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action_type: actionType,
+          application: document.getElementById("simulator-app").value,
+          description: document.getElementById("simulator-description").value.trim(),
+          summary: document.getElementById("simulator-summary").value.trim(),
+          risk: risks[actionType] || "High"
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderSimulator(data);
+    });
+
+    document.getElementById("simulator-approve").addEventListener("click", () => decideSimulator(true));
+    document.getElementById("simulator-deny").addEventListener("click", () => decideSimulator(false));
+    document.getElementById("simulator-reset").addEventListener("click", async () => {
+      const response = await fetch("/api/desktop/simulator/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      renderSimulator(data);
+    });
+
+    function renderDesktopSafety(data) {
+      const stop = document.getElementById("desktop-safety-stop");
+      if (!stop || !data) return;
+      const halted = data.halted === true || data.status === "stopped";
+      stop.textContent = halted ? "Emergency Stop: Stopped" : "Emergency Stop: Idle";
+    }
+
+    function clearDesktopPanel() {
+      const status = document.getElementById("desktop-status");
+      const plan = document.getElementById("desktop-plan");
+      if (status) status.textContent = "";
+      if (plan) plan.textContent = "";
+    }
+
+    function renderDesktopPlan(data) {
+      const status = document.getElementById("desktop-status");
+      const plan = document.getElementById("desktop-plan");
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearDesktopPanel();
+        return;
+      }
+      if (!data.ok || !data.plan) {
+        status.textContent = data.detail || "The planner could not make a plan.";
+        plan.textContent = "";
+        return;
+      }
+      const row = data.plan;
+      const steps = (row.steps || []).map((step) => step.number + ". " + step.text).join("\n");
+      const apps = (row.applications || []).join(", ") || "None named";
+      const actions = (row.user_actions || []).join("\n");
+      const warnings = (row.warnings || []).join("\n");
+      const lines = [
+        "Objective: " + (row.objective || ""),
+        "Steps:",
+        steps,
+        "Applications: " + apps,
+        "Risk: " + (row.risk || ""),
+        "What you do:",
+        actions
+      ];
+      if (warnings) lines.push("Warnings:", warnings);
+      lines.push(row.notice || "");
+      status.textContent = "";
+      plan.textContent = lines.join("\n");
+    }
+
+    document.getElementById("desktop-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("desktop-task");
+      const task = input.value.trim();
+      if (!task) return;
+      const response = await fetch("/api/desktop/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task })
+      });
+      const data = await response.json().catch(() => ({}));
+      input.value = "";
+      renderDesktopPlan(data);
     });
 
     document.getElementById("apply-provider").addEventListener("click", async () => {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import uuid
 from dataclasses import dataclass
 
@@ -27,6 +28,7 @@ class SkillExecutor:
         self._halt = halt
         self._audit = audit
         self._pending: dict[str, _Pending] = {}
+        self._lock = threading.Lock()
 
     def catalog(self) -> list[dict]:
         rows = []
@@ -48,6 +50,10 @@ class SkillExecutor:
         return rows
 
     def pending(self) -> list[dict]:
+        with self._lock:
+            return self._pending_rows()
+
+    def _pending_rows(self) -> list[dict]:
         rows = []
         for action_id, item in list(self._pending.items()):
             if not self._halt.is_current(item.generation) or self._halt.approval_state(action_id) != "pending":
@@ -70,18 +76,24 @@ class SkillExecutor:
         return rows
 
     def pending_skill(self, action_id: str) -> str:
-        item = self._pending.get(action_id)
-        return item.skill_id if item is not None else ""
+        with self._lock:
+            item = self._pending.get(action_id)
+            return item.skill_id if item is not None else ""
 
     def requested_path(self, action_id: str, skill_id: str = "read_file") -> str:
-        item = self._pending.get(action_id)
-        if item is None or item.skill_id != skill_id:
-            return ""
-        key = "query" if skill_id == "search_files" else "path"
-        value = item.arguments.get(key, "")
-        return value if isinstance(value, str) else ""
+        with self._lock:
+            item = self._pending.get(action_id)
+            if item is None or item.skill_id != skill_id:
+                return ""
+            key = "query" if skill_id == "search_files" else "path"
+            value = item.arguments.get(key, "")
+            return value if isinstance(value, str) else ""
 
     def submit(self, skill_id: str, arguments: dict | None = None) -> SkillResult:
+        with self._lock:
+            return self._submit(skill_id, arguments)
+
+    def _submit(self, skill_id: str, arguments: dict | None) -> SkillResult:
         generation = self._halt.capture()
         if not self._halt.is_current(generation):
             self._audit.write(status="stopped", skill_id=str(skill_id), outcome="cancelled", error_type="stopped", detail="Skill request refused")
@@ -112,6 +124,10 @@ class SkillExecutor:
         return self._invoke(skill, spec, cleaned, generation)
 
     def confirm(self, action_id: str, *, approved: bool) -> SkillResult:
+        with self._lock:
+            return self._confirm(action_id, approved=approved)
+
+    def _confirm(self, action_id: str, *, approved: bool) -> SkillResult:
         pending = self._pending.get(action_id)
         if pending is None or not isinstance(action_id, str):
             return SkillResult(False, text="That action is not waiting for approval.", outcome="rejected", error_type="unknown_action")
@@ -141,6 +157,9 @@ class SkillExecutor:
         if not self._halt.is_current(pending.generation):
             self._audit.write(status="stopped", skill_id=spec.id, outcome="cancelled", error_type="stopped", detail="Approved skill action was not run")
             return SkillResult(False, outcome="cancelled", error_type="stopped", action_id=action_id)
+        if self._policy.decide(spec) == "disabled":
+            self._audit.write(status="denied", skill_id=spec.id, outcome="denied", error_type="disabled", detail="Skill is not enabled")
+            return SkillResult(False, text="That skill is not enabled.", outcome="disabled", error_type="disabled", action_id=action_id)
         return self._invoke(skill, spec, pending.arguments, pending.generation, action_id)
 
     def _prepare(self, skill_id: object, arguments: object) -> tuple[object, SkillSpec, dict] | SkillResult:

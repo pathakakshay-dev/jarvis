@@ -19,6 +19,8 @@ class FakeProvider:
         self.error_type = "provider_error"
         self.calls = 0
         self.messages_seen: list[list[dict]] = []
+        self.tool_specs_seen: list[list[dict]] = []
+        self.planner_reply: str | None = None
         self.entered = threading.Event()
         self.release = threading.Event()
 
@@ -33,6 +35,7 @@ class FakeProvider:
     ) -> ChatResult:
         self.calls += 1
         self.messages_seen.append(messages)
+        self.tool_specs_seen.append(tool_specs)
         self.entered.set()
         if not halt.allow_outbound() or not halt.is_current(generation):
             return ChatResult(ok=False, outcome="cancelled", error_type="cancelled")
@@ -70,4 +73,42 @@ class FakeProvider:
                 error_type="already_completed",
                 text=self.reply,
             )
+        desktop_task = _desktop_task(messages)
+        if desktop_task is not None:
+            if self.planner_reply is not None:
+                return ChatResult(ok=True, text=self.planner_reply)
+            from jarvis.desktop.plan import local_desktop_proposal
+
+            return ChatResult(ok=True, text=local_desktop_proposal(desktop_task))
+        task = _planner_task(messages)
+        if task is not None:
+            if self.planner_reply is not None:
+                return ChatResult(ok=True, text=self.planner_reply)
+            from jarvis.skills.orchestrator import PlanError
+            from jarvis.skills.planner import proposal_from_task
+
+            try:
+                return ChatResult(ok=True, text=proposal_from_task(task))
+            except PlanError as exc:
+                return ChatResult(ok=False, error_type="rejected", text=exc.text)
         return ChatResult(ok=True, text=self.reply)
+
+
+def _desktop_task(messages: list[dict]) -> str | None:
+    if not messages or not isinstance(messages[0], dict):
+        return None
+    system = messages[0].get("content")
+    if not isinstance(system, str) or not system.startswith("JARVIS desktop planner."):
+        return None
+    last = messages[-1].get("content") if isinstance(messages[-1], dict) else ""
+    return last if isinstance(last, str) else ""
+
+
+def _planner_task(messages: list[dict]) -> str | None:
+    if not messages or not isinstance(messages[0], dict):
+        return None
+    system = messages[0].get("content")
+    if not isinstance(system, str) or not system.startswith("JARVIS planner."):
+        return None
+    last = messages[-1].get("content") if isinstance(messages[-1], dict) else ""
+    return last if isinstance(last, str) else ""

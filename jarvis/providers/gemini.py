@@ -49,6 +49,8 @@ class GeminiProvider:
         )
         if result.outcome in {"cancelled", "timeout", "http_error"} or result.response is None:
             return _from_openai(result, generation, halt)
+        if 300 <= result.response.status_code < 400:
+            return ChatResult(ok=False, error_type="http_error", text="That failed: the provider could not be reached.")
         if result.outcome == "already_completed":
             return ChatResult(
                 ok=False,
