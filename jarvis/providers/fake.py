@@ -74,6 +74,8 @@ class FakeProvider:
                 error_type="already_completed",
                 text=self.reply,
             )
+        if _browser_reader_request(messages):
+            return ChatResult(ok=True, text="Summary of the webpage snapshot.")
         goal_task = _goal_task(messages)
         if goal_task is not None:
             if self.goal_reply is not None:
@@ -98,6 +100,13 @@ class FakeProvider:
             except PlanError as exc:
                 return ChatResult(ok=False, error_type="rejected", text=exc.text)
         return ChatResult(ok=True, text=self.reply)
+
+
+def _browser_reader_request(messages: list[dict]) -> bool:
+    if not messages or not isinstance(messages[0], dict):
+        return False
+    system = messages[0].get("content")
+    return isinstance(system, str) and system.startswith("JARVIS browser reader.")
 
 
 def _goal_task(messages: list[dict]) -> str | None:

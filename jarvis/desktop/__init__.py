@@ -2,8 +2,9 @@
 
 The planner and the simulator do not control the desktop. The Notepad opener and
 Calculator opener each start only their own fixed application after a separate
-approval. Desktop control can inspect, focus, or type into an already open
-Notepad window after its own approval. Window switching can only focus an
-already open Notepad window after its own approval. None of these use the
-planner, simulator, or goal agent, and none accept arbitrary executable paths.
+approval. Desktop control and window switching act on already open Notepad
+windows after their own approvals. The Desktop Action Engine queues a short
+sequence of those same safe actions and still requires one approval per step.
+None of these use the planner, simulator, or goal agent, and none accept
+arbitrary executable paths.
 """

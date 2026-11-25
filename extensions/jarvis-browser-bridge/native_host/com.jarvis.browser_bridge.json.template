@@ -1,0 +1,9 @@
+{
+  "name": "com.jarvis.browser_bridge",
+  "description": "JARVIS Browser Bridge native host",
+  "path": "REPLACE_WITH_ABSOLUTE_PATH_TO_BRIDGE_HOST_LAUNCHER",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://REPLACE_WITH_EXTENSION_ID/"
+  ]
+}

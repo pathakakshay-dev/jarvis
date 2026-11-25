@@ -38,6 +38,17 @@ GOAL_SKILLS = (
     "app_inventory",
     "clipboard_read",
 )
+_READ_ONLY_SKILLS = frozenset(
+    {
+        "list_files",
+        "search_files",
+        "read_file",
+        "system_info",
+        "app_inventory",
+        "clipboard_read",
+    }
+)
+_MAX_READONLY_RETRIES = 2
 _FIELDS = {
     "list_files": frozenset({"path"}),
     "search_files": frozenset({"query"}),
@@ -106,6 +117,7 @@ class GoalAgent:
         other_busy=None,
         clock=None,
         ttl_s: float = GOAL_RUN_TTL_S,
+        recovery=None,
     ) -> None:
         self._executor = executor
         self._registry = registry
@@ -118,6 +130,7 @@ class GoalAgent:
         self._other_busy = other_busy or (lambda: False)
         self._clock = clock or _monotonic
         self._ttl_s = ttl_s
+        self._recovery = recovery
         self._run: dict | None = None
         self._notice: dict | None = None
         self._lock = threading.RLock()
@@ -182,6 +195,7 @@ class GoalAgent:
                 "executed": 0,
             }
             self._audit.write(status="goal_proposed", outcome="pending", detail="Goal plan prepared")
+            self._checkpoint_locked()
             return _view(self._run)
 
     def start(self, plan_id: object, approved: object) -> dict:
@@ -233,6 +247,26 @@ class GoalAgent:
                 self._executor.confirm(action_id, approved=False)
             run["action_id"] = ""
             state = _result_state(approved, result)
+            if (
+                state == "failed"
+                and approved
+                and step["skill"] in _READ_ONLY_SKILLS
+                and result.error_type in {"timeout", "unavailable"}
+            ):
+                retries = run.setdefault("readonly_retries", {})
+                count = int(retries.get(str(run["index"]), 0))
+                if count < _MAX_READONLY_RETRIES:
+                    retries[str(run["index"])] = count + 1
+                    run["results"].append(
+                        {
+                            "index": run["index"],
+                            "summary": step["summary"],
+                            "state": "retrying",
+                            "text": "Read-only step timed out. Approve again to retry.",
+                        }
+                    )
+                    self._checkpoint_locked()
+                    return self._submit_current_locked()
             run["results"].append({"index": run["index"], "summary": step["summary"], "state": state, "text": _public_result(result)})
             if state != "completed":
                 return self._finish_locked(state if state in {"denied", "cancelled", "failed"} else "failed", _stop_text(state), state)
@@ -244,6 +278,7 @@ class GoalAgent:
                 return self._finish_locked("completed", "The goal finished.", "completed")
             if self._clock() >= run["deadline"] or not self._halt.is_current(run["generation"]):
                 return self._cancel_locked("The goal was cancelled.")
+            self._checkpoint_locked()
             return self._submit_current_locked()
 
     def cancel(self) -> dict:
@@ -280,6 +315,7 @@ class GoalAgent:
         run["status"] = "awaiting_approval"
         run["action_id"] = result.action_id
         run["text"] = "This action needs its own approval. Approving the plan did not approve it."
+        self._checkpoint_locked()
         return _view(run)
 
     def _arguments_for_execution(self, step: dict) -> dict:
@@ -323,6 +359,7 @@ class GoalAgent:
         if action_id:
             self._executor.confirm(action_id, approved=False)
         self._audit.write(status="goal_cancelled", outcome="cancelled", detail="Goal cancelled")
+        self._checkpoint_locked()
         return _view(run)
 
     def _finish_locked(self, status: str, text: str, outcome: str) -> dict:
@@ -339,7 +376,16 @@ class GoalAgent:
             if pending:
                 self._executor.confirm(action_id, approved=False)
         self._audit.write(status="goal_" + status, outcome=outcome, detail="Goal " + status)
+        self._checkpoint_locked()
         return _view(run)
+
+    def _checkpoint_locked(self) -> None:
+        if self._recovery is None or self._run is None:
+            return
+        try:
+            self._recovery.record_goal(self._run)
+        except Exception:
+            pass
 
     def _release_pending_locked(self, action_id: str) -> None:
         if self._executor.pending_skill(action_id):

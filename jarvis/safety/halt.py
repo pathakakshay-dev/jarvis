@@ -206,7 +206,42 @@ class HaltController:
         url: str,
         *,
         headers: dict[str, str] | None = None,
-        params: dict | None = None,
+        params: dict | list | None = None,
+        timeout: float,
+        transport: httpx.BaseTransport | None = None,
+        resolver=None,
+    ) -> OutboundResult:
+        return self._guarded_request("GET", url, headers=headers, params=params, timeout=timeout, transport=transport, resolver=resolver)
+
+    def guarded_form_post(
+        self,
+        url: str,
+        *,
+        data: dict[str, str],
+        headers: dict[str, str] | None = None,
+        timeout: float,
+        transport: httpx.BaseTransport | None = None,
+        resolver=None,
+    ) -> OutboundResult:
+        return self._guarded_request(
+            "POST",
+            url,
+            headers=headers,
+            data=data,
+            timeout=timeout,
+            transport=transport,
+            resolver=resolver,
+        )
+
+    def _guarded_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict | list | None = None,
+        data: dict[str, str] | None = None,
+        json_body: dict | None = None,
         timeout: float,
         transport: httpx.BaseTransport | None = None,
         resolver=None,
@@ -221,7 +256,7 @@ class HaltController:
         try:
             if not self.allow_outbound():
                 return OutboundResult(outcome="cancelled")
-            response = client.get(url, headers=headers, params=params)
+            response = client.request(method, url, headers=headers, params=params, data=data, json=json_body)
             if not self.allow_outbound():
                 return OutboundResult(outcome="already_completed", response=response)
             return OutboundResult(outcome="ok", response=response)

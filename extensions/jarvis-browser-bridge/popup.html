@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>JARVIS Browser Bridge</title>
+  <style>
+    body { font: 13px/1.4 system-ui, sans-serif; margin: 12px; width: 300px; color: #111; }
+    h1 { font-size: 14px; margin: 0 0 8px; }
+    p { margin: 0 0 8px; }
+    input { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px; }
+    button { margin: 0 6px 6px 0; }
+    #status { min-height: 2.5em; color: #333; }
+  </style>
+</head>
+<body>
+  <h1>JARVIS Browser Bridge</h1>
+  <p>Connect with the pairing code from JARVIS. Scan, inspect, read, or run only when you click. JARVIS still requires approval.</p>
+  <input id="pair-code" maxlength="8" placeholder="Pairing code" autocomplete="off" spellcheck="false">
+  <div>
+    <button id="connect" type="button">Connect</button>
+    <button id="inspect" type="button">Inspect active tab</button>
+    <button id="read" type="button">Read active page</button>
+    <button id="scan" type="button">Scan action targets</button>
+    <button id="run" type="button">Run approved action</button>
+    <button id="disconnect" type="button">Disconnect</button>
+  </div>
+  <p id="status"></p>
+  <script src="popup.js"></script>
+</body>
+</html>

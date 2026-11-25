@@ -91,6 +91,8 @@ class Settings:
     whisper_device: str = "auto"
     brave_api_key: str = ""
     search_provider: str = "tavily"
+    google_client_id: str = ""
+    google_client_secret: str = ""
 
 
 def load_settings(root: Path | None = None, environ: dict[str, str] | None = None) -> Settings:
@@ -120,4 +122,6 @@ def load_settings(root: Path | None = None, environ: dict[str, str] | None = Non
         whisper_device=_whisper_device(merged.get("JARVIS_WHISPER_DEVICE", "auto")),
         brave_api_key=merged.get("JARVIS_BRAVE_API_KEY", "").strip(),
         search_provider=_search_provider(merged.get("JARVIS_SEARCH_PROVIDER", "tavily")),
+        google_client_id=merged.get("JARVIS_GOOGLE_CLIENT_ID", "").strip(),
+        google_client_secret=merged.get("JARVIS_GOOGLE_CLIENT_SECRET", "").strip(),
     )

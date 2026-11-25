@@ -7,13 +7,16 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.agent.loop import run_turn
 from jarvis.audit import AuditLog
+from jarvis.browser.bridge import BrowserBridge
+from jarvis.browser.intelligence import BrowserIntelligence
 from jarvis.desktop.calculator import CalculatorOpener
 from jarvis.desktop.control import DesktopController
+from jarvis.desktop.engine import DesktopActionEngine
 from jarvis.desktop.notepad import NotepadOpener
 from jarvis.desktop.switch import WindowSwitcher
 from jarvis.desktop.plan import DesktopPlanError, propose_desktop_plan
@@ -47,6 +50,11 @@ from jarvis.agent.goal import GoalAgent
 from jarvis.skills.orchestrator import SkillOrchestrator
 from jarvis.skills.system import SystemInfo
 from jarvis.skills.registry import SkillRegistry
+from jarvis.workflow.multi_app import MultiAppOrchestrator
+from jarvis.integrations.service import IntegrationsService
+from jarvis.tasks.engine import TaskReminderEngine
+from jarvis.tasks.notify import QueueNotifier
+from jarvis.recovery.service import RecoveryService
 from jarvis.voice.diagnostic import (
     CONSENT_HEADER,
     DIAGNOSTIC_NOTICE,
@@ -179,6 +187,131 @@ class WindowFocusDecisionIn(BaseModel):
     approved: bool
 
 
+class DesktopEngineStepIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str = Field(min_length=1, max_length=40)
+    window_id: str = Field(default="", max_length=32)
+    element_id: str = Field(default="", max_length=32)
+    text: str = Field(default="", max_length=200)
+    shortcut: str = Field(default="", max_length=20)
+
+
+class DesktopEngineProposeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    steps: list[DesktopEngineStepIn] = Field(min_length=1, max_length=6)
+
+
+class DesktopEngineStartIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
+class DesktopEngineDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
+class BrowserActionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str = Field(min_length=1, max_length=40)
+    session_id: str = Field(default="", max_length=32)
+
+
+class BrowserDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
+class BrowserBridgeIngressIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: dict
+    raw_size: int = Field(ge=0, le=16384)
+
+
+class BrowserActionProposeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str = Field(min_length=1, max_length=20)
+    element_id: str = Field(min_length=16, max_length=16)
+    text: str = Field(default="", max_length=200)
+
+
+class BrowserWorkflowProposeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    steps: list[dict] = Field(min_length=1, max_length=5)
+
+
+class BrowserWorkflowStartIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
+class MultiAppProposeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    steps: list[dict] = Field(min_length=1, max_length=6)
+
+
+class MultiAppStartIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_id: str = Field(min_length=32, max_length=32)
+    approved: bool
+
+
+class GmailSearchIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    query: str = Field(min_length=1, max_length=200)
+
+
+class GmailMessageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message_id: str = Field(min_length=1, max_length=128)
+
+
+class CalendarUpcomingIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    days: int = Field(default=7, ge=1, le=14)
+
+
+class ReminderCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=120)
+    notes: str = Field(default="", max_length=400)
+    due_at: str = Field(min_length=1, max_length=40)
+    timezone: str = Field(default="", max_length=64)
+    recurrence: str = Field(default="none", max_length=16)
+    recurrence_until: str = Field(default="", max_length=40)
+
+
+class ReminderEditIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reminder_id: str = Field(min_length=32, max_length=32)
+    title: str = Field(default="", max_length=120)
+    notes: str = Field(default="", max_length=400)
+    due_at: str = Field(default="", max_length=40)
+    timezone: str = Field(default="", max_length=64)
+    recurrence: str = Field(default="", max_length=16)
+    recurrence_until: str = Field(default="", max_length=40)
+
+
+class ReminderIdIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reminder_id: str = Field(min_length=32, max_length=32)
+
+
+class ReminderSnoozeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reminder_id: str = Field(min_length=32, max_length=32)
+    duration: str = Field(min_length=2, max_length=8)
+
+
+class RecoveryIdIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    checkpoint_id: str = Field(min_length=32, max_length=32)
+
+
 CLEAR_PHRASE = "clear all memories"
 
 
@@ -198,6 +331,15 @@ def create_app(
     calculator_launcher=None,
     desktop_port=None,
     focus_port=None,
+    engine_port=None,
+    browser_port=None,
+    browser_bridge=None,
+    integrations=None,
+    integration_protector=None,
+    integration_transport=None,
+    reminder_engine=None,
+    reminder_notifier=None,
+    start_reminder_scheduler: bool = True,
 ) -> FastAPI:
     settings = settings or load_settings(project_root())
     halt = halt or HaltController()
@@ -224,7 +366,49 @@ def create_app(
     calculator_opener = CalculatorOpener(halt, audit, launcher=calculator_launcher)
     desktop_control = DesktopController(halt, audit, policy, desktop=desktop_port)
     window_switcher = WindowSwitcher(halt, audit, desktop=focus_port)
+    desktop_engine = DesktopActionEngine(halt, audit, desktop=engine_port)
+    browser_intelligence = BrowserIntelligence(halt, audit, browser=browser_port)
+    recovery = RecoveryService(
+        halt,
+        audit,
+        db_path=settings.data_dir / "workflow_checkpoints.sqlite3",
+    )
+    browser_bridge = browser_bridge or BrowserBridge(
+        halt,
+        audit,
+        config_dir=settings.data_dir,
+        port=settings.port,
+        recovery=recovery,
+    )
     skill_executor = SkillExecutor(skills, policy, halt, audit)
+    multi_app = MultiAppOrchestrator(
+        halt,
+        audit,
+        skill_executor=skill_executor,
+        notepad=notepad_opener,
+        calculator=calculator_opener,
+        desktop_engine=desktop_engine,
+        browser_bridge=browser_bridge,
+        recovery=recovery,
+    )
+    redirect_uri = f"http://127.0.0.1:{settings.port}/api/integrations/google/callback"
+    integrations = integrations or IntegrationsService(
+        halt,
+        audit,
+        data_dir=settings.data_dir,
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        redirect_uri=redirect_uri,
+        protector=integration_protector,
+        transport=integration_transport,
+    )
+    reminder_engine = reminder_engine or TaskReminderEngine(
+        halt,
+        audit,
+        db_path=settings.data_dir / "reminders.sqlite3",
+        notifier=reminder_notifier or QueueNotifier(),
+        start_scheduler=start_reminder_scheduler,
+    )
     orchestrator = SkillOrchestrator(
         skill_executor,
         skills,
@@ -245,7 +429,9 @@ def create_app(
         registry.active,
         settings.timeout_s,
         other_busy=lambda: orchestrator.snapshot().get("status") in {"running", "awaiting_approval"},
+        recovery=recovery,
     )
+    recovery.bind(goal_agent=goal_agent, multi_app=multi_app, browser_bridge=browser_bridge)
     voice_gate = VoiceGate()
     diagnostic = DiagnosticStore(settings.data_dir / "diagnostic")
     diagnostic.discard()
@@ -276,6 +462,13 @@ def create_app(
     app.state.calculator_opener = calculator_opener
     app.state.desktop_control = desktop_control
     app.state.window_switcher = window_switcher
+    app.state.desktop_engine = desktop_engine
+    app.state.browser_intelligence = browser_intelligence
+    app.state.browser_bridge = browser_bridge
+    app.state.multi_app = multi_app
+    app.state.integrations = integrations
+    app.state.reminder_engine = reminder_engine
+    app.state.recovery = recovery
     app.state.skill_executor = skill_executor
     app.state.orchestrator = orchestrator
     app.state.goal_agent = goal_agent
@@ -290,7 +483,14 @@ def create_app(
         port = settings.port
         if not local_page_allowed(request, port):
             return JSONResponse({"detail": "Unauthorized."}, status_code=401)
-        if request.url.path.startswith("/api/") and not api_allowed(request, app.state.api_token, port):
+        path = request.url.path
+        if path == "/api/browser/bridge/ingress":
+            if not request.headers.get("x-jarvis-bridge-token"):
+                return JSONResponse({"detail": "Unauthorized."}, status_code=401)
+        elif path == "/api/integrations/google/callback":
+            # OAuth redirect from Google; state is validated by the integrations service.
+            pass
+        elif path.startswith("/api/") and not api_allowed(request, app.state.api_token, port):
             return JSONResponse({"detail": "Unauthorized."}, status_code=401)
         return await call_next(request)
 
@@ -311,6 +511,12 @@ def create_app(
         goal_agent.observe_stop()
         desktop_control.observe_stop()
         window_switcher.observe_stop()
+        desktop_engine.observe_stop()
+        browser_intelligence.observe_stop()
+        browser_bridge.observe_stop()
+        multi_app.observe_stop()
+        integrations.observe_stop()
+        reminder_engine.observe_stop()
         body = halt.snapshot()
         provider = registry.active()
         body.update(
@@ -768,6 +974,339 @@ def create_app(
         )
         return {"permission": "window_switch", "enabled": enabled}
 
+    @app.get("/api/desktop/engine")
+    def desktop_engine_state():
+        return desktop_engine.status()
+
+    @app.post("/api/desktop/engine/propose")
+    def desktop_engine_propose(body: DesktopEngineProposeIn):
+        return desktop_engine.propose({"steps": [step.model_dump() for step in body.steps]})
+
+    @app.post("/api/desktop/engine/start")
+    def desktop_engine_start(body: DesktopEngineStartIn):
+        return desktop_engine.start(body.plan_id, body.approved)
+
+    @app.post("/api/desktop/engine/confirm")
+    def desktop_engine_confirm(body: DesktopEngineDecisionIn):
+        return desktop_engine.confirm(body.action_id, body.approved)
+
+    @app.post("/api/desktop/engine/cancel")
+    def desktop_engine_cancel(_body: SystemRequestIn):
+        return desktop_engine.cancel()
+
+    @app.post("/api/desktop/engine/permission")
+    def desktop_engine_permission(body: NotepadPermissionIn):
+        enabled = desktop_engine.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Desktop action engine enabled" if enabled else "Desktop action engine disabled",
+        )
+        return {"permission": "desktop_engine", "enabled": enabled}
+
+    @app.get("/api/browser")
+    def browser_state():
+        return browser_intelligence.status()
+
+    @app.post("/api/browser/preview")
+    def browser_preview(body: BrowserActionIn):
+        return browser_intelligence.preview(body.model_dump())
+
+    @app.post("/api/browser/confirm")
+    def browser_confirm(body: BrowserDecisionIn):
+        return browser_intelligence.confirm(body.action_id, body.approved)
+
+    @app.post("/api/browser/cancel")
+    def browser_cancel(_body: SystemRequestIn):
+        return browser_intelligence.cancel()
+
+    @app.post("/api/browser/clear")
+    def browser_clear(_body: SystemRequestIn):
+        return browser_intelligence.clear()
+
+    @app.post("/api/browser/permission")
+    def browser_permission(body: NotepadPermissionIn):
+        enabled = browser_intelligence.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Browser intelligence enabled" if enabled else "Browser intelligence disabled",
+        )
+        return {"permission": "browser", "enabled": enabled}
+
+    @app.get("/api/browser/bridge")
+    def browser_bridge_state():
+        return browser_bridge.status()
+
+    @app.post("/api/browser/bridge/permission")
+    def browser_bridge_permission(body: NotepadPermissionIn):
+        enabled = browser_bridge.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Browser bridge enabled" if enabled else "Browser bridge disabled",
+        )
+        return {"permission": "browser_bridge", "enabled": enabled}
+
+    @app.post("/api/browser/bridge/reader/permission")
+    def browser_reader_permission(body: NotepadPermissionIn):
+        enabled = browser_bridge.set_reader_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Browser reader enabled" if enabled else "Browser reader disabled",
+        )
+        return {"permission": "browser_reader", "enabled": enabled}
+
+    @app.get("/api/browser/bridge/actions")
+    def browser_actions_state():
+        return browser_bridge.actions.status()
+
+    @app.post("/api/browser/bridge/actions/permission")
+    def browser_actions_permission(body: NotepadPermissionIn):
+        enabled = browser_bridge.actions.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Browser actions enabled" if enabled else "Browser actions disabled",
+        )
+        return {"permission": "browser_actions", "enabled": enabled}
+
+    @app.post("/api/browser/bridge/actions/propose")
+    def browser_actions_propose(body: BrowserActionProposeIn):
+        return browser_bridge.actions.propose(body.model_dump())
+
+    @app.post("/api/browser/bridge/actions/confirm")
+    def browser_actions_confirm(body: BrowserDecisionIn):
+        return browser_bridge.actions.confirm(body.action_id, body.approved)
+
+    @app.post("/api/browser/bridge/actions/cancel")
+    def browser_actions_cancel(_body: SystemRequestIn):
+        return browser_bridge.actions.cancel()
+
+    @app.post("/api/browser/bridge/actions/clear")
+    def browser_actions_clear(_body: SystemRequestIn):
+        return browser_bridge.actions.clear()
+
+    @app.get("/api/browser/bridge/workflow")
+    def browser_workflow_state():
+        return browser_bridge.workflow.status()
+
+    @app.post("/api/browser/bridge/workflow/permission")
+    def browser_workflow_permission(body: NotepadPermissionIn):
+        enabled = browser_bridge.workflow.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Browser workflow enabled" if enabled else "Browser workflow disabled",
+        )
+        return {"permission": "browser_workflow", "enabled": enabled}
+
+    @app.post("/api/browser/bridge/workflow/propose")
+    def browser_workflow_propose(body: BrowserWorkflowProposeIn):
+        return browser_bridge.workflow.propose(body.model_dump())
+
+    @app.post("/api/browser/bridge/workflow/start")
+    def browser_workflow_start(body: BrowserWorkflowStartIn):
+        return browser_bridge.workflow.start(body.plan_id, body.approved)
+
+    @app.post("/api/browser/bridge/workflow/confirm")
+    def browser_workflow_confirm(body: BrowserDecisionIn):
+        return browser_bridge.workflow.confirm(body.action_id, body.approved)
+
+    @app.post("/api/browser/bridge/workflow/cancel")
+    def browser_workflow_cancel(_body: SystemRequestIn):
+        return browser_bridge.workflow.cancel()
+
+    @app.post("/api/browser/bridge/workflow/clear")
+    def browser_workflow_clear(_body: SystemRequestIn):
+        return browser_bridge.workflow.clear()
+
+    @app.get("/api/workflow/multi-app")
+    def multi_app_state():
+        return multi_app.status()
+
+    @app.post("/api/workflow/multi-app/permission")
+    def multi_app_permission(body: NotepadPermissionIn):
+        enabled = multi_app.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Multi-app workflow enabled" if enabled else "Multi-app workflow disabled",
+        )
+        return {"permission": "multi_app_workflow", "enabled": enabled}
+
+    @app.post("/api/workflow/multi-app/propose")
+    def multi_app_propose(body: MultiAppProposeIn):
+        return multi_app.propose(body.model_dump())
+
+    @app.post("/api/workflow/multi-app/start")
+    def multi_app_start(body: MultiAppStartIn):
+        return multi_app.start(body.plan_id, body.approved)
+
+    @app.post("/api/workflow/multi-app/confirm")
+    def multi_app_confirm(body: BrowserDecisionIn):
+        return multi_app.confirm(body.action_id, body.approved)
+
+    @app.post("/api/workflow/multi-app/cancel")
+    def multi_app_cancel(_body: SystemRequestIn):
+        return multi_app.cancel()
+
+    @app.post("/api/workflow/multi-app/clear")
+    def multi_app_clear(_body: SystemRequestIn):
+        return multi_app.clear()
+
+    @app.get("/api/integrations")
+    def integrations_state():
+        return integrations.status()
+
+    @app.post("/api/integrations/google/connect")
+    def integrations_google_connect(_body: SystemRequestIn):
+        return integrations.begin_connect()
+
+    @app.get("/api/integrations/google/callback")
+    def integrations_google_callback(state: str = "", code: str = "", error: str = ""):
+        result = integrations.complete_connect(state=state, code=code, error=error)
+        flag = "connected" if result.get("ok") else "failed"
+        return RedirectResponse(url=f"/?integrations={flag}", status_code=303)
+
+    @app.post("/api/integrations/google/disconnect")
+    def integrations_google_disconnect(_body: SystemRequestIn):
+        return integrations.disconnect()
+
+    @app.post("/api/integrations/gmail/permission")
+    def integrations_gmail_permission(body: NotepadPermissionIn):
+        enabled = integrations.gmail.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Gmail read enabled" if enabled else "Gmail read disabled",
+        )
+        return {"permission": "gmail_read", "enabled": enabled}
+
+    @app.post("/api/integrations/gmail/search")
+    def integrations_gmail_search(body: GmailSearchIn):
+        return integrations.gmail.request_search(body.query)
+
+    @app.post("/api/integrations/gmail/message")
+    def integrations_gmail_message(body: GmailMessageIn):
+        return integrations.gmail.request_message(body.message_id)
+
+    @app.post("/api/integrations/gmail/confirm")
+    def integrations_gmail_confirm(body: BrowserDecisionIn):
+        return integrations.gmail.confirm(body.action_id, body.approved)
+
+    @app.post("/api/integrations/gmail/clear")
+    def integrations_gmail_clear(_body: SystemRequestIn):
+        return integrations.gmail.clear_result()
+
+    @app.post("/api/integrations/calendar/permission")
+    def integrations_calendar_permission(body: NotepadPermissionIn):
+        enabled = integrations.calendar.set_enabled(bool(body.enabled))
+        audit.write(
+            status="idle",
+            detail="Calendar read enabled" if enabled else "Calendar read disabled",
+        )
+        return {"permission": "calendar_read", "enabled": enabled}
+
+    @app.post("/api/integrations/calendar/upcoming")
+    def integrations_calendar_upcoming(body: CalendarUpcomingIn):
+        return integrations.calendar.request_upcoming(body.days)
+
+    @app.post("/api/integrations/calendar/confirm")
+    def integrations_calendar_confirm(body: BrowserDecisionIn):
+        return integrations.calendar.confirm(body.action_id, body.approved)
+
+    @app.post("/api/integrations/calendar/clear")
+    def integrations_calendar_clear(_body: SystemRequestIn):
+        return integrations.calendar.clear_result()
+
+    @app.get("/api/reminders")
+    def reminders_state():
+        return reminder_engine.status()
+
+    @app.post("/api/reminders/permission")
+    def reminders_permission(body: NotepadPermissionIn):
+        enabled = reminder_engine.set_enabled(bool(body.enabled))
+        return {"permission": "reminders", "enabled": enabled}
+
+    @app.post("/api/reminders/create")
+    def reminders_create(body: ReminderCreateIn):
+        payload = body.model_dump()
+        if not payload.get("timezone"):
+            payload.pop("timezone", None)
+        if not payload.get("recurrence_until"):
+            payload.pop("recurrence_until", None)
+        return reminder_engine.create(payload)
+
+    @app.post("/api/reminders/edit")
+    def reminders_edit(body: ReminderEditIn):
+        payload = {key: value for key, value in body.model_dump().items() if key != "reminder_id" and value != ""}
+        return reminder_engine.request_edit(body.reminder_id, payload)
+
+    @app.post("/api/reminders/cancel")
+    def reminders_cancel(body: ReminderIdIn):
+        return reminder_engine.request_cancel(body.reminder_id)
+
+    @app.post("/api/reminders/confirm")
+    def reminders_confirm(body: BrowserDecisionIn):
+        return reminder_engine.confirm(body.action_id, body.approved)
+
+    @app.post("/api/reminders/complete")
+    def reminders_complete(body: ReminderIdIn):
+        return reminder_engine.complete(body.reminder_id)
+
+    @app.post("/api/reminders/snooze")
+    def reminders_snooze(body: ReminderSnoozeIn):
+        return reminder_engine.snooze(body.reminder_id, body.duration)
+
+    @app.get("/api/recovery")
+    def recovery_state():
+        return recovery.status()
+
+    @app.post("/api/recovery/abandon")
+    def recovery_abandon(body: RecoveryIdIn):
+        return recovery.abandon(body.checkpoint_id)
+
+    @app.post("/api/recovery/restart")
+    def recovery_restart(body: RecoveryIdIn):
+        return recovery.restart_begin(body.checkpoint_id)
+
+    @app.post("/api/browser/bridge/pair")
+    def browser_bridge_pair(_body: SystemRequestIn):
+        return browser_bridge.refresh_pair_code()
+
+    @app.post("/api/browser/bridge/confirm")
+    def browser_bridge_confirm(body: BrowserDecisionIn):
+        return browser_bridge.confirm(body.action_id, body.approved)
+
+    @app.post("/api/browser/bridge/cancel")
+    def browser_bridge_cancel(_body: SystemRequestIn):
+        return browser_bridge.cancel()
+
+    @app.post("/api/browser/bridge/clear")
+    def browser_bridge_clear(_body: SystemRequestIn):
+        return browser_bridge.clear()
+
+    @app.post("/api/browser/bridge/snapshot/clear")
+    def browser_bridge_snapshot_clear(_body: SystemRequestIn):
+        return browser_bridge.clear_snapshot()
+
+    @app.post("/api/browser/bridge/summarize")
+    async def browser_bridge_summarize(_body: SystemRequestIn):
+        _require_running()
+        if not halt.try_begin():
+            raise HTTPException(status_code=409, detail="The assistant is busy.")
+        try:
+            return await asyncio.to_thread(
+                browser_bridge.summarize,
+                registry.active(),
+                timeout_s=min(settings.timeout_s, 30),
+            )
+        finally:
+            halt.finish_busy()
+
+    @app.post("/api/browser/bridge/disconnect")
+    def browser_bridge_disconnect(_body: SystemRequestIn):
+        return browser_bridge.disconnect()
+
+    @app.post("/api/browser/bridge/ingress")
+    def browser_bridge_ingress(request: Request, body: BrowserBridgeIngressIn):
+        token = request.headers.get("x-jarvis-bridge-token", "")
+        return browser_bridge.ingress(token, body.message, raw_size=int(body.raw_size))
+
     @app.get("/api/agent/plan")
     def agent_plan():
         return orchestrator.snapshot()
@@ -825,6 +1364,12 @@ def create_app(
         goal_agent.observe_stop()
         desktop_control.observe_stop()
         window_switcher.observe_stop()
+        desktop_engine.observe_stop()
+        browser_intelligence.observe_stop()
+        browser_bridge.observe_stop()
+        multi_app.observe_stop()
+        integrations.observe_stop()
+        reminder_engine.observe_stop()
         voice_gate.cancel()
         diagnostic.delete()
         for item in report["outcomes"]:
@@ -837,6 +1382,7 @@ def create_app(
         if not halt.halted:
             raise HTTPException(status_code=409, detail="The assistant is not stopped.")
         halt.resume()
+        reminder_engine.resume_delivery()
         audit.write(status="idle", detail="Manual resume. Previous tasks were not replayed.")
         return {"resumed": True, "replayed": False}
 

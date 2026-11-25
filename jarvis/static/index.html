@@ -105,8 +105,9 @@
     #voice-state strong { margin-right: 6px; }
     #diagnostic-results { margin-top: 8px; }
     #diagnostic-results strong { display: block; }
-    .files, .agent, .goal-agent, .desktop, .desktop-safety, .desktop-simulator, .notepad-action, .calculator-action, .desktop-control, .window-switch, .system, .apps, .clipboard { margin-top: 22px; }
-    .files h2, .agent h2, .goal-agent h2, .desktop h2, .desktop-safety h2, .desktop-simulator h2, .notepad-action h2, .calculator-action h2, .desktop-control h2, .window-switch h2, .system h2, .apps h2, .clipboard h2 { font-size: 1rem; margin: 0; }
+    .files, .agent, .goal-agent, .desktop, .desktop-safety, .desktop-simulator, .notepad-action, .calculator-action, .desktop-control, .window-switch, .desktop-engine, .browser-intel, .browser-bridge, .browser-reader, .browser-actions, .browser-workflow, .multi-app-workflow, .integrations, .reminders, .recovery, .system, .apps, .clipboard { margin-top: 22px; }
+    .files h2, .agent h2, .goal-agent h2, .desktop h2, .desktop-safety h2, .desktop-simulator h2, .notepad-action h2, .calculator-action h2, .desktop-control h2, .window-switch h2, .desktop-engine h2, .browser-intel h2, .browser-bridge h2, .browser-reader h2, .browser-actions h2, .browser-workflow h2, .multi-app-workflow h2, .integrations h2, .reminders h2, .recovery h2, .system h2, .apps h2, .clipboard h2 { font-size: 1rem; margin: 0; }
+    #reader-snapshot { white-space: pre-wrap; max-height: 240px; overflow: auto; }
     .file-request { display: flex; gap: 8px; margin-top: 8px; }
     .file-request input { flex: 1; padding: 10px 12px; }
     .write-form { flex-wrap: wrap; }
@@ -329,6 +330,280 @@
         <button type="submit">Preview focus</button>
       </form>
       <div id="window-switch-actions" class="voice-controls"></div>
+    </section>
+    <section class="desktop-engine" id="desktop-engine">
+      <h2>Desktop Action Engine</h2>
+      <p class="hint">This queues a short sequence of approved Notepad actions. Each step needs its own approval. It does not launch programs and it does not use the goal agent, planner, or simulator.</p>
+      <p id="desktop-engine-permission" class="hint">Desktop action engine is off.</p>
+      <div class="voice-controls">
+        <button id="desktop-engine-on" type="button">Enable Desktop Action Engine</button>
+        <button id="desktop-engine-off" type="button">Disable Desktop Action Engine</button>
+      </div>
+      <div class="voice-controls">
+        <button id="desktop-engine-inspect" type="button">Inspect Notepad windows</button>
+        <button id="desktop-engine-cancel" type="button">Cancel task</button>
+      </div>
+      <p id="desktop-engine-status" class="hint"></p>
+      <div id="desktop-engine-view" class="log"></div>
+      <form id="desktop-engine-form" class="file-request">
+        <select id="desktop-engine-action">
+          <option value="focus_window">Focus window</option>
+          <option value="type_text">Type text</option>
+          <option value="click_element">Click element</option>
+          <option value="key_shortcut">Select all</option>
+        </select>
+        <select id="desktop-engine-target"></select>
+        <input id="desktop-engine-text" type="text" maxlength="200" placeholder="Text to type" autocomplete="off">
+        <button id="desktop-engine-add" type="button">Add step</button>
+        <button type="submit">Propose task</button>
+      </form>
+      <div id="desktop-engine-plan" class="log"></div>
+      <div id="desktop-engine-actions" class="voice-controls"></div>
+    </section>
+    <section class="browser-intel" id="browser-intel">
+      <h2>Browser Intelligence</h2>
+      <p class="hint">This lists open Edge or Chrome windows and, after a separate approval, shows a local inspection of the selected window title. It does not open pages, read page content, or send browser data to a provider.</p>
+      <p id="browser-permission" class="hint">Browser intelligence is off.</p>
+      <div class="voice-controls">
+        <button id="browser-on" type="button">Enable Browser Intelligence</button>
+        <button id="browser-off" type="button">Disable Browser Intelligence</button>
+      </div>
+      <div class="voice-controls">
+        <button id="browser-find" type="button">Find browser windows</button>
+        <button id="browser-cancel" type="button">Cancel inspection</button>
+        <button id="browser-clear" type="button">Clear result</button>
+      </div>
+      <p id="browser-status" class="hint"></p>
+      <div id="browser-view" class="log"></div>
+      <form id="browser-form" class="file-request">
+        <select id="browser-target"></select>
+        <button type="submit">Inspect session</button>
+      </form>
+      <div id="browser-result" class="log"></div>
+      <div id="browser-actions" class="voice-controls"></div>
+    </section>
+    <section class="browser-bridge" id="browser-bridge">
+      <h2>Browser Bridge</h2>
+      <p class="hint">Pairs a manually installed Chrome or Edge extension with JARVIS over native messaging. After you ask the extension to inspect the active tab, JARVIS shows only that title and URL here once you approve. It does not read page content, history, cookies, or passwords, and it does not send browser data to a provider.</p>
+      <p id="bridge-permission" class="hint">Browser bridge is off.</p>
+      <div class="voice-controls">
+        <button id="bridge-on" type="button">Enable Browser Bridge</button>
+        <button id="bridge-off" type="button">Disable Browser Bridge</button>
+        <button id="bridge-pair" type="button">New pairing code</button>
+      </div>
+      <p id="bridge-pair-code" class="hint"></p>
+      <p id="bridge-status" class="hint"></p>
+      <div id="bridge-session" class="log"></div>
+      <div id="bridge-result" class="log"></div>
+      <div id="bridge-actions" class="voice-controls"></div>
+      <div class="voice-controls">
+        <button id="bridge-cancel" type="button">Cancel inspection</button>
+        <button id="bridge-clear" type="button">Clear result</button>
+        <button id="bridge-disconnect" type="button">Disconnect bridge</button>
+      </div>
+    </section>
+    <section class="browser-reader" id="browser-reader">
+      <h2>Browser Reader</h2>
+      <p class="hint">After the Browser Bridge is connected, enable this to approve a one-time text snapshot of the active page from the extension. Snapshots stay in this panel only. Summarize sends that text to the current AI provider only when you click Summarize. Webpage text is treated as data, not instructions.</p>
+      <p id="reader-permission" class="hint">Browser page reader is off.</p>
+      <div class="voice-controls">
+        <button id="reader-on" type="button">Enable Browser Reader</button>
+        <button id="reader-off" type="button">Disable Browser Reader</button>
+      </div>
+      <p id="reader-status" class="hint"></p>
+      <div id="reader-pending" class="log"></div>
+      <div id="reader-actions" class="voice-controls"></div>
+      <pre id="reader-snapshot" class="bubble file-result"></pre>
+      <p id="reader-summary" class="hint"></p>
+      <div class="voice-controls">
+        <button id="reader-summarize" type="button">Summarize snapshot</button>
+        <button id="reader-clear" type="button">Clear snapshot</button>
+        <button id="reader-cancel" type="button">Cancel read</button>
+        <button id="reader-disconnect" type="button">Disconnect bridge</button>
+      </div>
+    </section>
+    <section class="browser-actions" id="browser-actions">
+      <h2>Browser Actions</h2>
+      <p class="hint">After the Browser Bridge is connected, scan targets from the extension, then propose one click, focus, type, or select-all action here. Each action needs its own approval. Typing needs its own approval with the exact text shown. Run the approved action from the extension popup. No navigation, form submit, passwords, or multi-step chains.</p>
+      <p id="ba-permission" class="hint">Browser actions are off.</p>
+      <div class="voice-controls">
+        <button id="ba-on" type="button">Enable Browser Actions</button>
+        <button id="ba-off" type="button">Disable Browser Actions</button>
+      </div>
+      <p id="ba-status" class="hint"></p>
+      <div id="ba-targets" class="log"></div>
+      <form id="ba-form" class="file-request write-form">
+        <select id="ba-action">
+          <option value="click">Click</option>
+          <option value="focus">Focus</option>
+          <option value="type">Type text</option>
+          <option value="select_all">Select all</option>
+        </select>
+        <select id="ba-target"></select>
+        <input id="ba-text" type="text" maxlength="200" placeholder="Text to type" autocomplete="off">
+        <button type="submit">Propose action</button>
+      </form>
+      <div id="ba-pending" class="log"></div>
+      <div id="ba-actions" class="voice-controls"></div>
+      <div id="ba-result" class="log"></div>
+      <div class="voice-controls">
+        <button id="ba-cancel" type="button">Cancel action</button>
+        <button id="ba-clear" type="button">Clear action state</button>
+      </div>
+    </section>
+    <section class="browser-workflow" id="browser-workflow">
+      <h2>Browser Workflow</h2>
+      <p class="hint">Build a short plan of up to five steps using scanned Browser Action targets. Review the full plan, Start it, then approve each step. Action steps reuse Browser Actions and must be run from the extension after approval. No automatic retries or replanning.</p>
+      <p id="bw-permission" class="hint">Browser workflow is off.</p>
+      <div class="voice-controls">
+        <button id="bw-on" type="button">Enable Browser Workflow</button>
+        <button id="bw-off" type="button">Disable Browser Workflow</button>
+      </div>
+      <p id="bw-status" class="hint"></p>
+      <form id="bw-form" class="file-request write-form">
+        <select id="bw-action">
+          <option value="observe">Observe page</option>
+          <option value="click">Click</option>
+          <option value="focus">Focus</option>
+          <option value="type">Type text</option>
+          <option value="select_all">Select all</option>
+        </select>
+        <select id="bw-target"></select>
+        <input id="bw-text" type="text" maxlength="200" placeholder="Text to type" autocomplete="off">
+        <button id="bw-add" type="button">Add step</button>
+        <button type="submit">Propose workflow</button>
+      </form>
+      <div id="bw-draft" class="log"></div>
+      <div id="bw-plan" class="log"></div>
+      <div id="bw-pending" class="log"></div>
+      <div id="bw-actions" class="voice-controls"></div>
+      <div class="voice-controls">
+        <button id="bw-cancel" type="button">Cancel workflow</button>
+        <button id="bw-clear" type="button">Clear workflow</button>
+      </div>
+    </section>
+    <section class="multi-app-workflow" id="multi-app-workflow">
+      <h2>Multi-App Workflow</h2>
+      <p class="hint">Coordinate up to six approved steps across Browser Workflow, Desktop Action Engine, Notepad, Calculator, and System Information. Review the full plan and affected apps, Start it, then approve each underlying action. Existing executor permissions stay independent. No automatic retries or replanning.</p>
+      <p id="ma-permission" class="hint">Multi-app workflow is off.</p>
+      <div class="voice-controls">
+        <button id="ma-on" type="button">Enable Multi-App Workflow</button>
+        <button id="ma-off" type="button">Disable Multi-App Workflow</button>
+      </div>
+      <p id="ma-status" class="hint"></p>
+      <form id="ma-form" class="file-request write-form">
+        <select id="ma-capability">
+          <option value="system_info">System information</option>
+          <option value="open_notepad">Open Notepad</option>
+          <option value="open_calculator">Open Calculator</option>
+          <option value="desktop_engine">Desktop Action Engine</option>
+          <option value="browser_workflow">Browser Workflow</option>
+        </select>
+        <select id="ma-action">
+          <option value="observe">Observe</option>
+          <option value="focus_window">Focus window</option>
+          <option value="type_text">Type text</option>
+          <option value="click_element">Click element</option>
+          <option value="key_shortcut">Select all</option>
+          <option value="click">Browser click</option>
+          <option value="focus">Browser focus</option>
+          <option value="type">Browser type</option>
+          <option value="select_all">Browser select all</option>
+        </select>
+        <input id="ma-window" type="text" maxlength="32" placeholder="Desktop window id" autocomplete="off">
+        <input id="ma-element" type="text" maxlength="32" placeholder="Element id" autocomplete="off">
+        <input id="ma-text" type="text" maxlength="200" placeholder="Text to type" autocomplete="off">
+        <button id="ma-add" type="button">Add step</button>
+        <button type="submit">Propose workflow</button>
+      </form>
+      <div id="ma-draft" class="log"></div>
+      <div id="ma-plan" class="log"></div>
+      <div id="ma-pending" class="log"></div>
+      <div id="ma-actions" class="voice-controls"></div>
+      <div class="voice-controls">
+        <button id="ma-cancel" type="button">Cancel workflow</button>
+        <button id="ma-clear" type="button">Clear workflow</button>
+      </div>
+    </section>
+    <section class="integrations" id="integrations">
+      <h2>Personal Integrations</h2>
+      <p class="hint">Connect Google with official OAuth for read-only Gmail and Calendar. Tokens stay encrypted for this Windows user. Data is fetched only when you ask, never summarized automatically, and not sent to AI providers from this panel.</p>
+      <p id="int-status" class="hint">Google account is not connected.</p>
+      <div class="voice-controls">
+        <button id="int-connect" type="button">Connect Google</button>
+        <button id="int-disconnect" type="button">Disconnect Google</button>
+      </div>
+      <p id="gmail-permission" class="hint">Gmail read is off.</p>
+      <div class="voice-controls">
+        <button id="gmail-on" type="button">Enable Gmail read</button>
+        <button id="gmail-off" type="button">Disable Gmail read</button>
+      </div>
+      <form id="gmail-search-form" class="file-request">
+        <input id="gmail-query" type="text" maxlength="200" placeholder="Search Gmail" autocomplete="off">
+        <button type="submit">Search Gmail</button>
+      </form>
+      <form id="gmail-message-form" class="file-request">
+        <input id="gmail-message-id" type="text" maxlength="128" placeholder="Message id" autocomplete="off">
+        <button type="submit">Read message</button>
+      </form>
+      <div id="gmail-pending" class="log"></div>
+      <div id="gmail-actions" class="voice-controls"></div>
+      <pre id="gmail-result" class="bubble file-result"></pre>
+      <div class="voice-controls">
+        <button id="gmail-clear" type="button">Clear Gmail results</button>
+      </div>
+      <p id="cal-permission" class="hint">Calendar read is off.</p>
+      <div class="voice-controls">
+        <button id="cal-on" type="button">Enable Calendar read</button>
+        <button id="cal-off" type="button">Disable Calendar read</button>
+      </div>
+      <form id="cal-form" class="file-request">
+        <input id="cal-days" type="number" min="1" max="14" value="7">
+        <button type="submit">Load upcoming events</button>
+      </form>
+      <div id="cal-pending" class="log"></div>
+      <div id="cal-actions" class="voice-controls"></div>
+      <pre id="cal-result" class="bubble file-result"></pre>
+      <div class="voice-controls">
+        <button id="cal-clear" type="button">Clear Calendar results</button>
+      </div>
+    </section>
+    <section class="reminders" id="reminders">
+      <h2>Tasks &amp; Reminders</h2>
+      <p class="hint">Create one-time or bounded daily/weekly reminders. The scheduler only shows local notifications — it never runs shell, browser, desktop, email or calendar actions. Edit and cancel need confirmation.</p>
+      <p id="rem-permission" class="hint">Tasks and reminders are off.</p>
+      <div class="voice-controls">
+        <button id="rem-on" type="button">Enable reminders</button>
+        <button id="rem-off" type="button">Disable reminders</button>
+      </div>
+      <p id="rem-status" class="hint"></p>
+      <form id="rem-form" class="file-request write-form">
+        <input id="rem-title" type="text" maxlength="120" placeholder="Reminder title" autocomplete="off">
+        <input id="rem-notes" type="text" maxlength="400" placeholder="Notes (optional)" autocomplete="off">
+        <input id="rem-due" type="datetime-local">
+        <input id="rem-tz" type="text" maxlength="64" placeholder="Timezone e.g. UTC" value="UTC" autocomplete="off">
+        <select id="rem-recurrence">
+          <option value="none">One-time</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+        </select>
+        <input id="rem-until" type="datetime-local">
+        <button type="submit">Create reminder</button>
+      </form>
+      <div id="rem-pending" class="log"></div>
+      <div id="rem-actions" class="voice-controls"></div>
+      <h3>Upcoming</h3>
+      <div id="rem-upcoming" class="log"></div>
+      <h3>Overdue / missed</h3>
+      <div id="rem-overdue" class="log"></div>
+      <h3>Notifications</h3>
+      <div id="rem-notifications" class="log"></div>
+    </section>
+    <section class="recovery" id="recovery">
+      <h2>Workflow Recovery</h2>
+      <p class="hint">Interrupted Goal, Multi-App, and Browser workflows appear here after a crash or restart. JARVIS never resumes them automatically. Review, abandon, or restart from the beginning — restart proposes a new execution and never reuses old approvals.</p>
+      <p id="rec-status" class="hint"></p>
+      <div id="rec-list" class="log"></div>
     </section>
     <section class="files">
       <h2>Files</h2>
@@ -595,6 +870,16 @@
             clearCalculatorPanel();
             clearDesktopControl();
             clearWindowSwitch();
+            clearDesktopEngine();
+            clearBrowserIntel();
+            clearBrowserBridge();
+            clearBrowserReader();
+            clearBrowserActions();
+            clearBrowserWorkflow();
+            clearMultiAppWorkflow();
+            clearIntegrations();
+            clearReminders();
+            clearRecovery();
             clearSystemPanel();
             clearAppsPanel();
             clearClipboardPanel();
@@ -614,6 +899,16 @@
             await loadCalculator();
             await loadDesktopControl();
             await loadWindowSwitch();
+            await loadDesktopEngine();
+            await loadBrowserIntel();
+            await loadBrowserBridge();
+            await loadBrowserReader();
+            await loadBrowserActions();
+            await loadBrowserWorkflow();
+            await loadMultiAppWorkflow();
+            await loadIntegrations();
+            await loadReminders();
+            await loadRecovery();
           }
         }
       } catch (error) {
@@ -658,6 +953,12 @@
       clearCalculatorPanel();
       clearDesktopControl();
       clearWindowSwitch();
+      clearDesktopEngine();
+      clearBrowserIntel();
+      clearBrowserBridge();
+      clearBrowserReader();
+      clearBrowserActions();
+      clearBrowserWorkflow();
       clearSystemPanel();
       clearAppsPanel();
       clearClipboardPanel();
@@ -2395,6 +2696,1552 @@
       const windowId = document.getElementById("window-switch-target").value || "";
       previewWindowSwitch({ action: "focus_window", window_id: windowId });
     });
+
+    let desktopEngineDraft = [];
+
+    function clearDesktopEngine() {
+      const permission = document.getElementById("desktop-engine-permission");
+      const status = document.getElementById("desktop-engine-status");
+      const view = document.getElementById("desktop-engine-view");
+      const actions = document.getElementById("desktop-engine-actions");
+      const target = document.getElementById("desktop-engine-target");
+      const plan = document.getElementById("desktop-engine-plan");
+      if (permission) permission.textContent = "Desktop action engine is off.";
+      if (status) status.textContent = "";
+      if (view) view.replaceChildren();
+      if (actions) actions.replaceChildren();
+      if (target) target.replaceChildren();
+      if (plan) plan.replaceChildren();
+      desktopEngineDraft = [];
+    }
+
+    function renderDesktopEngine(data) {
+      const permission = document.getElementById("desktop-engine-permission");
+      const status = document.getElementById("desktop-engine-status");
+      const view = document.getElementById("desktop-engine-view");
+      const actions = document.getElementById("desktop-engine-actions");
+      const target = document.getElementById("desktop-engine-target");
+      const plan = document.getElementById("desktop-engine-plan");
+      if (!permission || !status || !view || !actions || !target || !plan) return;
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearDesktopEngine();
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Desktop action engine is on." : "Desktop action engine is off.";
+      status.textContent = data.text || "";
+      view.replaceChildren();
+      actions.replaceChildren();
+      target.replaceChildren();
+      plan.replaceChildren();
+      const observation = data.observation && data.observation.windows ? data.observation.windows : [];
+      observation.forEach((windowRow) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (windowRow.application || "") + " · " + (windowRow.title || "");
+        view.appendChild(item);
+        const windowOption = document.createElement("option");
+        windowOption.value = (windowRow.window_id || "") + " ";
+        windowOption.textContent = windowRow.title || "Notepad";
+        target.appendChild(windowOption);
+        (windowRow.elements || []).forEach((element) => {
+          const option = document.createElement("option");
+          option.value = (element.window_id || "") + " " + (element.element_id || "");
+          option.textContent = (windowRow.title || "Notepad") + " · " + (element.role || "") + " · " + (element.name || "");
+          target.appendChild(option);
+        });
+      });
+      const task = data.task;
+      if (task && task.steps) {
+        task.steps.forEach((step, index) => {
+          const item = document.createElement("div");
+          item.className = "row";
+          item.textContent = (index + 1) + ". " + (step.summary || step.action || "") + " · " + (step.state || "");
+          plan.appendChild(item);
+        });
+      } else {
+        desktopEngineDraft.forEach((step, index) => {
+          const item = document.createElement("div");
+          item.className = "row";
+          item.textContent = (index + 1) + ". " + (step.action || "");
+          plan.appendChild(item);
+        });
+      }
+      if (data.can_start && task && task.plan_id) {
+        const start = document.createElement("button");
+        start.type = "button";
+        start.textContent = "Start task";
+        start.addEventListener("click", () => startDesktopEngine(task.plan_id));
+        actions.appendChild(start);
+      }
+      const pending = data.pending;
+      if (pending && pending.action_id) {
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideDesktopEngine(pending.action_id, true));
+        actions.appendChild(approve);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideDesktopEngine(pending.action_id, false));
+        actions.appendChild(deny);
+      }
+    }
+
+    async function loadDesktopEngine() {
+      const response = await fetch("/api/desktop/engine");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderDesktopEngine({ permission_enabled: false, text: "Desktop action engine could not be loaded.", pending: null, observation: null, task: null });
+        return;
+      }
+      renderDesktopEngine(data);
+    }
+
+    async function setDesktopEnginePermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/engine/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadDesktopEngine();
+    }
+
+    async function proposeDesktopEngine(steps) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/engine/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ steps: steps })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) desktopEngineDraft = [];
+      renderDesktopEngine(data);
+    }
+
+    async function startDesktopEngine(planId) {
+      if (!planId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/engine/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: planId, approved: true })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderDesktopEngine(data);
+    }
+
+    async function decideDesktopEngine(actionId, approved) {
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/desktop/engine/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderDesktopEngine(data);
+    }
+
+    document.getElementById("desktop-engine-on").addEventListener("click", () => setDesktopEnginePermission(true));
+    document.getElementById("desktop-engine-off").addEventListener("click", () => setDesktopEnginePermission(false));
+    document.getElementById("desktop-engine-inspect").addEventListener("click", () => proposeDesktopEngine([{ action: "observe" }]));
+    document.getElementById("desktop-engine-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/desktop/engine/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      desktopEngineDraft = [];
+      renderDesktopEngine(data);
+    });
+    document.getElementById("desktop-engine-add").addEventListener("click", () => {
+      const action = document.getElementById("desktop-engine-action").value;
+      const selected = document.getElementById("desktop-engine-target").value || " ";
+      const parts = selected.split(" ");
+      const windowId = parts[0] || "";
+      const elementId = parts[1] || "";
+      const text = document.getElementById("desktop-engine-text").value;
+      const step = { action: action, window_id: windowId, element_id: action === "focus_window" ? "" : elementId, text: action === "type_text" ? text : "", shortcut: action === "key_shortcut" ? "ctrl+a" : "" };
+      desktopEngineDraft.push(step);
+      const plan = document.getElementById("desktop-engine-plan");
+      if (plan) {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = desktopEngineDraft.length + ". " + action;
+        plan.appendChild(item);
+      }
+    });
+    document.getElementById("desktop-engine-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!desktopEngineDraft.length) return;
+      proposeDesktopEngine(desktopEngineDraft.slice());
+    });
+
+    function clearBrowserIntel() {
+      const permission = document.getElementById("browser-permission");
+      const status = document.getElementById("browser-status");
+      const view = document.getElementById("browser-view");
+      const result = document.getElementById("browser-result");
+      const actions = document.getElementById("browser-actions");
+      const target = document.getElementById("browser-target");
+      if (permission) permission.textContent = "Browser intelligence is off.";
+      if (status) status.textContent = "";
+      if (view) view.replaceChildren();
+      if (result) result.replaceChildren();
+      if (actions) actions.replaceChildren();
+      if (target) target.replaceChildren();
+    }
+
+    function renderBrowserIntel(data) {
+      const permission = document.getElementById("browser-permission");
+      const status = document.getElementById("browser-status");
+      const view = document.getElementById("browser-view");
+      const result = document.getElementById("browser-result");
+      const actions = document.getElementById("browser-actions");
+      const target = document.getElementById("browser-target");
+      if (!permission || !status || !view || !result || !actions || !target) return;
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearBrowserIntel();
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Browser intelligence is on." : "Browser intelligence is off.";
+      status.textContent = data.text || "";
+      view.replaceChildren();
+      result.replaceChildren();
+      actions.replaceChildren();
+      target.replaceChildren();
+      const sessions = data.sessions && data.sessions.sessions ? data.sessions.sessions : [];
+      sessions.forEach((session) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (session.browser || "") + " · " + (session.title || "");
+        view.appendChild(item);
+        const option = document.createElement("option");
+        option.value = session.session_id || "";
+        option.textContent = (session.browser || "Browser") + " · " + (session.title || "");
+        target.appendChild(option);
+      });
+      const inspection = data.inspection;
+      if (inspection) {
+        const rows = [
+          "Browser: " + (inspection.browser || ""),
+          "Tab title: " + (inspection.tab_title || ""),
+          "Tab count: " + String(inspection.tab_count || ""),
+          "URL: unavailable",
+          inspection.note || ""
+        ];
+        rows.forEach((line) => {
+          const item = document.createElement("div");
+          item.className = "row";
+          item.textContent = line;
+          result.appendChild(item);
+        });
+      }
+      const pending = data.pending;
+      if (pending && pending.action_id) {
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideBrowser(pending.action_id, true));
+        actions.appendChild(approve);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideBrowser(pending.action_id, false));
+        actions.appendChild(deny);
+      }
+    }
+
+    async function loadBrowserIntel() {
+      const response = await fetch("/api/browser");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderBrowserIntel({ permission_enabled: false, text: "Browser intelligence could not be loaded.", pending: null, sessions: null, inspection: null });
+        return;
+      }
+      renderBrowserIntel(data);
+    }
+
+    async function setBrowserPermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadBrowserIntel();
+    }
+
+    async function previewBrowser(body) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json().catch(() => ({}));
+      renderBrowserIntel(data);
+    }
+
+    async function decideBrowser(actionId, approved) {
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderBrowserIntel(data);
+    }
+
+    document.getElementById("browser-on").addEventListener("click", () => setBrowserPermission(true));
+    document.getElementById("browser-off").addEventListener("click", () => setBrowserPermission(false));
+    document.getElementById("browser-find").addEventListener("click", () => previewBrowser({ action: "list" }));
+    document.getElementById("browser-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserIntel(await response.json().catch(() => ({})));
+    });
+    document.getElementById("browser-clear").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserIntel(await response.json().catch(() => ({})));
+    });
+    document.getElementById("browser-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const sessionId = document.getElementById("browser-target").value || "";
+      previewBrowser({ action: "inspect", session_id: sessionId });
+    });
+
+    function clearBrowserBridge() {
+      const permission = document.getElementById("bridge-permission");
+      const pairCode = document.getElementById("bridge-pair-code");
+      const status = document.getElementById("bridge-status");
+      const session = document.getElementById("bridge-session");
+      const result = document.getElementById("bridge-result");
+      const actions = document.getElementById("bridge-actions");
+      if (permission) permission.textContent = "Browser bridge is off.";
+      if (pairCode) pairCode.textContent = "";
+      if (status) status.textContent = "";
+      if (session) session.replaceChildren();
+      if (result) result.replaceChildren();
+      if (actions) actions.replaceChildren();
+    }
+
+    function renderBrowserBridge(data) {
+      const permission = document.getElementById("bridge-permission");
+      const pairCode = document.getElementById("bridge-pair-code");
+      const status = document.getElementById("bridge-status");
+      const session = document.getElementById("bridge-session");
+      const result = document.getElementById("bridge-result");
+      const actions = document.getElementById("bridge-actions");
+      if (!permission || !pairCode || !status || !session || !result || !actions) return;
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearBrowserBridge();
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Browser bridge is on." : "Browser bridge is off.";
+      pairCode.textContent = data.pair_code ? ("Pairing code: " + data.pair_code) : "";
+      status.textContent = data.text || "";
+      session.replaceChildren();
+      result.replaceChildren();
+      actions.replaceChildren();
+      if (data.session && data.session.connected) {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = "Connected · " + (data.session.browser || "") + " · extension " + (data.session.extension_version || "");
+        session.appendChild(item);
+      }
+      const inspection = data.inspection;
+      if (inspection) {
+        [
+          "Browser: " + (inspection.browser || ""),
+          "Tab title: " + (inspection.tab_title || ""),
+          "URL: " + (inspection.tab_url || "")
+        ].forEach((line) => {
+          const item = document.createElement("div");
+          item.className = "row";
+          item.textContent = line;
+          result.appendChild(item);
+        });
+      }
+      const pending = data.pending;
+      if (pending && pending.action_id && pending.action !== "read") {
+        const preview = document.createElement("div");
+        preview.className = "row";
+        preview.textContent = (pending.summary || "Inspect the active browser tab.") + " · " + (pending.browser || "") + " · " + (pending.tab_title || "");
+        result.appendChild(preview);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideBrowserBridge(pending.action_id, true));
+        actions.appendChild(approve);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideBrowserBridge(pending.action_id, false));
+        actions.appendChild(deny);
+      }
+    }
+
+    async function loadBrowserBridge() {
+      const response = await fetch("/api/browser/bridge");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderBrowserBridge({ permission_enabled: false, text: "Browser bridge could not be loaded.", pending: null, session: null, inspection: null, pair_code: "" });
+        return;
+      }
+      renderBrowserBridge(data);
+    }
+
+    async function setBrowserBridgePermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadBrowserBridge();
+    }
+
+    async function decideBrowserBridge(actionId, approved) {
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderBrowserBridge(data);
+    }
+
+    document.getElementById("bridge-on").addEventListener("click", () => setBrowserBridgePermission(true));
+    document.getElementById("bridge-off").addEventListener("click", () => setBrowserBridgePermission(false));
+    document.getElementById("bridge-pair").addEventListener("click", async () => {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserBridge(await response.json().catch(() => ({})));
+    });
+    document.getElementById("bridge-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/bridge/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserBridge(await response.json().catch(() => ({})));
+    });
+    document.getElementById("bridge-clear").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/bridge/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserBridge(await response.json().catch(() => ({})));
+    });
+    document.getElementById("bridge-disconnect").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/bridge/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      renderBrowserBridge(data);
+      renderBrowserReader(data);
+    });
+
+    function clearBrowserReader() {
+      const permission = document.getElementById("reader-permission");
+      const status = document.getElementById("reader-status");
+      const pending = document.getElementById("reader-pending");
+      const actions = document.getElementById("reader-actions");
+      const snapshot = document.getElementById("reader-snapshot");
+      const summary = document.getElementById("reader-summary");
+      if (permission) permission.textContent = "Browser page reader is off.";
+      if (status) status.textContent = "";
+      if (pending) pending.replaceChildren();
+      if (actions) actions.replaceChildren();
+      if (snapshot) snapshot.textContent = "";
+      if (summary) summary.textContent = "";
+    }
+
+    function renderBrowserReader(data) {
+      const permission = document.getElementById("reader-permission");
+      const status = document.getElementById("reader-status");
+      const pendingBox = document.getElementById("reader-pending");
+      const actions = document.getElementById("reader-actions");
+      const snapshot = document.getElementById("reader-snapshot");
+      const summary = document.getElementById("reader-summary");
+      if (!permission || !status || !pendingBox || !actions || !snapshot || !summary) return;
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearBrowserReader();
+        return;
+      }
+      permission.textContent = data.reader_permission_enabled ? "Browser page reader is on." : "Browser page reader is off.";
+      status.textContent = data.text || "";
+      pendingBox.replaceChildren();
+      actions.replaceChildren();
+      const pending = data.pending;
+      if (pending && pending.action === "read" && pending.action_id) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = (pending.summary || "Read the active webpage.") + " · " + (pending.browser || "") + " · " + (pending.tab_title || "") + " · " + String(pending.char_count || 0) + " characters";
+        pendingBox.appendChild(row);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideBrowserReader(pending.action_id, true));
+        actions.appendChild(approve);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideBrowserReader(pending.action_id, false));
+        actions.appendChild(deny);
+      }
+      if (data.snapshot && data.snapshot.text) {
+        snapshot.textContent = data.snapshot.text;
+      } else {
+        snapshot.textContent = "";
+      }
+      summary.textContent = data.summary || "";
+    }
+
+    async function loadBrowserReader() {
+      const response = await fetch("/api/browser/bridge");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderBrowserReader({ reader_permission_enabled: false, text: "Browser reader could not be loaded.", pending: null, snapshot: null, summary: "" });
+        return;
+      }
+      renderBrowserReader(data);
+      renderBrowserBridge(data);
+    }
+
+    async function setBrowserReaderPermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/reader/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadBrowserReader();
+    }
+
+    async function decideBrowserReader(actionId, approved) {
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      renderBrowserReader(data);
+      renderBrowserBridge(data);
+    }
+
+    document.getElementById("reader-on").addEventListener("click", () => setBrowserReaderPermission(true));
+    document.getElementById("reader-off").addEventListener("click", () => setBrowserReaderPermission(false));
+    document.getElementById("reader-summarize").addEventListener("click", async () => {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserReader(await response.json().catch(() => ({})));
+    });
+    document.getElementById("reader-clear").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/bridge/snapshot/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserReader(await response.json().catch(() => ({})));
+    });
+    document.getElementById("reader-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/bridge/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      renderBrowserReader(data);
+      renderBrowserBridge(data);
+    });
+    document.getElementById("reader-disconnect").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/bridge/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      renderBrowserReader(data);
+      renderBrowserBridge(data);
+      await loadBrowserActions();
+    });
+
+    function clearBrowserActions() {
+      const permission = document.getElementById("ba-permission");
+      const status = document.getElementById("ba-status");
+      const targets = document.getElementById("ba-targets");
+      const pending = document.getElementById("ba-pending");
+      const actions = document.getElementById("ba-actions");
+      const result = document.getElementById("ba-result");
+      const target = document.getElementById("ba-target");
+      if (permission) permission.textContent = "Browser actions are off.";
+      if (status) status.textContent = "";
+      if (targets) targets.replaceChildren();
+      if (pending) pending.replaceChildren();
+      if (actions) actions.replaceChildren();
+      if (result) result.replaceChildren();
+      if (target) target.replaceChildren();
+    }
+
+    function renderBrowserActions(data) {
+      const permission = document.getElementById("ba-permission");
+      const status = document.getElementById("ba-status");
+      const targets = document.getElementById("ba-targets");
+      const pendingBox = document.getElementById("ba-pending");
+      const actions = document.getElementById("ba-actions");
+      const result = document.getElementById("ba-result");
+      const target = document.getElementById("ba-target");
+      if (!permission || !status || !targets || !pendingBox || !actions || !result || !target) return;
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearBrowserActions();
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Browser actions are on." : "Browser actions are off.";
+      status.textContent = data.text || "";
+      targets.replaceChildren();
+      pendingBox.replaceChildren();
+      actions.replaceChildren();
+      result.replaceChildren();
+      const selected = target.value;
+      target.replaceChildren();
+      const rows = data.targets && data.targets.elements ? data.targets.elements : [];
+      rows.forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (row.kind || "") + " · " + (row.label || "") + " · " + (row.tag || "");
+        targets.appendChild(item);
+        const option = document.createElement("option");
+        option.value = row.element_id || "";
+        option.textContent = (row.kind || "target") + " · " + (row.label || "");
+        target.appendChild(option);
+      });
+      if (selected) target.value = selected;
+      const pending = data.pending;
+      if (pending && pending.action_id) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = (pending.summary || "") + (pending.text ? (" Text: " + pending.text) : "");
+        pendingBox.appendChild(row);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve";
+        approve.addEventListener("click", () => decideBrowserAction(pending.action_id, true));
+        actions.appendChild(approve);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny";
+        deny.addEventListener("click", () => decideBrowserAction(pending.action_id, false));
+        actions.appendChild(deny);
+      }
+      if (data.ready && data.ready.summary) {
+        const ready = document.createElement("div");
+        ready.className = "row";
+        ready.textContent = data.ready.summary + " · " + (data.ready.state || "");
+        pendingBox.appendChild(ready);
+      }
+      if (data.result) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = (data.result.action || "") + " · " + (data.result.outcome || "") + (data.result.verified ? " · verified" : "");
+        result.appendChild(row);
+      }
+    }
+
+    async function loadBrowserActions() {
+      const response = await fetch("/api/browser/bridge/actions");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderBrowserActions({ permission_enabled: false, text: "Browser actions could not be loaded.", pending: null, targets: null, result: null });
+        return;
+      }
+      renderBrowserActions(data);
+    }
+
+    async function setBrowserActionsPermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/actions/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadBrowserActions();
+    }
+
+    async function decideBrowserAction(actionId, approved) {
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/actions/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      renderBrowserActions(await response.json().catch(() => ({})));
+    }
+
+    document.getElementById("ba-on").addEventListener("click", () => setBrowserActionsPermission(true));
+    document.getElementById("ba-off").addEventListener("click", () => setBrowserActionsPermission(false));
+    document.getElementById("ba-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/actions/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: document.getElementById("ba-action").value,
+          element_id: document.getElementById("ba-target").value || "",
+          text: document.getElementById("ba-text").value || ""
+        })
+      });
+      renderBrowserActions(await response.json().catch(() => ({})));
+    });
+    document.getElementById("ba-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/bridge/actions/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserActions(await response.json().catch(() => ({})));
+    });
+    document.getElementById("ba-clear").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/bridge/actions/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserActions(await response.json().catch(() => ({})));
+    });
+
+    let browserWorkflowDraft = [];
+
+    function clearBrowserWorkflow() {
+      const permission = document.getElementById("bw-permission");
+      const status = document.getElementById("bw-status");
+      const draft = document.getElementById("bw-draft");
+      const plan = document.getElementById("bw-plan");
+      const pending = document.getElementById("bw-pending");
+      const actions = document.getElementById("bw-actions");
+      const target = document.getElementById("bw-target");
+      if (permission) permission.textContent = "Browser workflow is off.";
+      if (status) status.textContent = "";
+      if (draft) draft.replaceChildren();
+      if (plan) plan.replaceChildren();
+      if (pending) pending.replaceChildren();
+      if (actions) actions.replaceChildren();
+      if (target) target.replaceChildren();
+      browserWorkflowDraft = [];
+    }
+
+    function renderBrowserWorkflow(data, actionTargets) {
+      const permission = document.getElementById("bw-permission");
+      const status = document.getElementById("bw-status");
+      const draft = document.getElementById("bw-draft");
+      const plan = document.getElementById("bw-plan");
+      const pendingBox = document.getElementById("bw-pending");
+      const actions = document.getElementById("bw-actions");
+      const target = document.getElementById("bw-target");
+      if (!permission || !status || !draft || !plan || !pendingBox || !actions || !target) return;
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearBrowserWorkflow();
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Browser workflow is on." : "Browser workflow is off.";
+      status.textContent = data.text || "";
+      draft.replaceChildren();
+      plan.replaceChildren();
+      pendingBox.replaceChildren();
+      actions.replaceChildren();
+      const selected = target.value;
+      target.replaceChildren();
+      const rows = actionTargets && actionTargets.elements ? actionTargets.elements : [];
+      rows.forEach((row) => {
+        const option = document.createElement("option");
+        option.value = row.element_id || "";
+        option.textContent = (row.kind || "target") + " · " + (row.label || "");
+        target.appendChild(option);
+      });
+      if (selected) target.value = selected;
+      browserWorkflowDraft.forEach((step, index) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (index + 1) + ". " + (step.action || "") + (step.element_id ? (" · " + step.element_id) : "") + (step.text ? (" · " + step.text) : "");
+        draft.appendChild(item);
+      });
+      const run = data.run;
+      if (run && run.steps) {
+        run.steps.forEach((step, index) => {
+          const item = document.createElement("div");
+          item.className = "row";
+          item.textContent = (index + 1) + ". " + (step.state || "") + " · " + (step.summary || step.action || "");
+          plan.appendChild(item);
+        });
+        if (run.status === "proposed" && run.plan_id) {
+          const start = document.createElement("button");
+          start.type = "button";
+          start.textContent = "Start workflow";
+          start.addEventListener("click", () => startBrowserWorkflow(run.plan_id, true));
+          actions.appendChild(start);
+          const deny = document.createElement("button");
+          deny.type = "button";
+          deny.textContent = "Deny plan";
+          deny.addEventListener("click", () => startBrowserWorkflow(run.plan_id, false));
+          actions.appendChild(deny);
+        }
+      }
+      const pending = data.pending;
+      if (pending && pending.action_id) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = (pending.summary || "") + (pending.text ? (" Text: " + pending.text) : "");
+        pendingBox.appendChild(row);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve step";
+        approve.addEventListener("click", () => decideBrowserWorkflow(pending.action_id, true));
+        actions.appendChild(approve);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny step";
+        deny.addEventListener("click", () => decideBrowserWorkflow(pending.action_id, false));
+        actions.appendChild(deny);
+      }
+      if (data.ready && data.ready.summary) {
+        const ready = document.createElement("div");
+        ready.className = "row";
+        ready.textContent = data.ready.summary + " · " + (data.ready.state || "");
+        pendingBox.appendChild(ready);
+      }
+    }
+
+    async function loadBrowserWorkflow() {
+      const [workflowResponse, actionsResponse] = await Promise.all([
+        fetch("/api/browser/bridge/workflow"),
+        fetch("/api/browser/bridge/actions")
+      ]);
+      const data = await workflowResponse.json().catch(() => ({}));
+      const actionsData = await actionsResponse.json().catch(() => ({}));
+      if (!workflowResponse.ok) {
+        renderBrowserWorkflow({ permission_enabled: false, text: "Browser workflow could not be loaded.", pending: null, run: null }, null);
+        return;
+      }
+      renderBrowserWorkflow(data, actionsData.targets || null);
+    }
+
+    async function setBrowserWorkflowPermission(enabled) {
+      if (lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/workflow/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
+      });
+      if (!response.ok) return;
+      await loadBrowserWorkflow();
+    }
+
+    async function startBrowserWorkflow(planId, approved) {
+      if (!planId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/workflow/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: planId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      const actionsData = await fetch("/api/browser/bridge/actions").then((r) => r.json()).catch(() => ({}));
+      renderBrowserWorkflow(data, actionsData.targets || null);
+    }
+
+    async function decideBrowserWorkflow(actionId, approved) {
+      if (!actionId || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/workflow/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved: Boolean(approved) })
+      });
+      const data = await response.json().catch(() => ({}));
+      const actionsData = await fetch("/api/browser/bridge/actions").then((r) => r.json()).catch(() => ({}));
+      renderBrowserWorkflow(data, actionsData.targets || null);
+      renderBrowserActions(actionsData);
+    }
+
+    document.getElementById("bw-on").addEventListener("click", () => setBrowserWorkflowPermission(true));
+    document.getElementById("bw-off").addEventListener("click", () => setBrowserWorkflowPermission(false));
+    document.getElementById("bw-add").addEventListener("click", () => {
+      if (browserWorkflowDraft.length >= 5) return;
+      const action = document.getElementById("bw-action").value;
+      const step = { action: action };
+      if (action !== "observe") {
+        step.element_id = document.getElementById("bw-target").value || "";
+      }
+      if (action === "type") {
+        step.text = document.getElementById("bw-text").value || "";
+      }
+      browserWorkflowDraft.push(step);
+      loadBrowserWorkflow();
+    });
+    document.getElementById("bw-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!browserWorkflowDraft.length || lastStatus === "stopped" || stopRequestedAt !== null) return;
+      const response = await fetch("/api/browser/bridge/workflow/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ steps: browserWorkflowDraft.slice() })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (data.run) browserWorkflowDraft = [];
+      const actionsData = await fetch("/api/browser/bridge/actions").then((r) => r.json()).catch(() => ({}));
+      renderBrowserWorkflow(data, actionsData.targets || null);
+    });
+    document.getElementById("bw-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/browser/bridge/workflow/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserWorkflow(await response.json().catch(() => ({})), null);
+    });
+    document.getElementById("bw-clear").addEventListener("click", async () => {
+      browserWorkflowDraft = [];
+      const response = await fetch("/api/browser/bridge/workflow/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderBrowserWorkflow(await response.json().catch(() => ({})), null);
+    });
+
+    let multiAppDraft = [];
+
+    function clearMultiAppWorkflow() {
+      const permission = document.getElementById("ma-permission");
+      const status = document.getElementById("ma-status");
+      const draft = document.getElementById("ma-draft");
+      const plan = document.getElementById("ma-plan");
+      const pending = document.getElementById("ma-pending");
+      const actions = document.getElementById("ma-actions");
+      if (permission) permission.textContent = "Multi-app workflow is off.";
+      if (status) status.textContent = "";
+      if (draft) draft.replaceChildren();
+      if (plan) plan.replaceChildren();
+      if (pending) pending.replaceChildren();
+      if (actions) actions.replaceChildren();
+      multiAppDraft = [];
+    }
+
+    function renderMultiAppWorkflow(data) {
+      const permission = document.getElementById("ma-permission");
+      const status = document.getElementById("ma-status");
+      const draft = document.getElementById("ma-draft");
+      const plan = document.getElementById("ma-plan");
+      const pending = document.getElementById("ma-pending");
+      const actions = document.getElementById("ma-actions");
+      if (!permission || !status || !draft || !plan || !pending || !actions) return;
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearMultiAppWorkflow();
+        return;
+      }
+      permission.textContent = data.permission_enabled ? "Multi-app workflow is on." : "Multi-app workflow is off.";
+      status.textContent = data.text || "";
+      draft.replaceChildren();
+      plan.replaceChildren();
+      pending.replaceChildren();
+      actions.replaceChildren();
+      multiAppDraft.forEach((step, index) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = (index + 1) + ". " + step.capability + (step.action ? " / " + step.action : "");
+        draft.appendChild(item);
+      });
+      if (data.run) {
+        const apps = document.createElement("div");
+        apps.className = "row";
+        apps.textContent = "Affected apps: " + ((data.run.apps || []).join(", ") || "None");
+        plan.appendChild(apps);
+        const state = document.createElement("div");
+        state.className = "row";
+        state.textContent = "Status: " + data.run.status;
+        plan.appendChild(state);
+        (data.run.steps || []).forEach((step, index) => {
+          const item = document.createElement("div");
+          item.className = "row";
+          item.textContent = (index + 1) + ". [" + step.state + "] " + (step.summary || step.capability);
+          plan.appendChild(item);
+        });
+      }
+      if (data.run && data.run.status === "proposed") {
+        const start = document.createElement("button");
+        start.type = "button";
+        start.textContent = "Start workflow";
+        start.addEventListener("click", () => confirmMultiAppStart(data.run.plan_id, true));
+        actions.appendChild(start);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny plan";
+        deny.addEventListener("click", () => confirmMultiAppStart(data.run.plan_id, false));
+        actions.appendChild(deny);
+      }
+      if (data.pending && data.pending.action_id) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = (data.pending.summary || "Action waiting") + " [" + (data.pending.capability || "") + "]";
+        pending.appendChild(row);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve step";
+        approve.addEventListener("click", () => confirmMultiAppStep(data.pending.action_id, true));
+        actions.appendChild(approve);
+        const denyStep = document.createElement("button");
+        denyStep.type = "button";
+        denyStep.textContent = "Deny step";
+        denyStep.addEventListener("click", () => confirmMultiAppStep(data.pending.action_id, false));
+        actions.appendChild(denyStep);
+      }
+    }
+
+    async function loadMultiAppWorkflow() {
+      const response = await fetch("/api/workflow/multi-app");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        renderMultiAppWorkflow({ permission_enabled: false, text: "Multi-app workflow could not be loaded.", pending: null, run: null });
+        return;
+      }
+      renderMultiAppWorkflow(data);
+    }
+
+    async function setMultiAppPermission(enabled) {
+      const response = await fetch("/api/workflow/multi-app/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled })
+      });
+      await response.json().catch(() => ({}));
+      await loadMultiAppWorkflow();
+    }
+
+    async function confirmMultiAppStart(planId, approved) {
+      const response = await fetch("/api/workflow/multi-app/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: planId, approved })
+      });
+      renderMultiAppWorkflow(await response.json().catch(() => ({})));
+    }
+
+    async function confirmMultiAppStep(actionId, approved) {
+      const response = await fetch("/api/workflow/multi-app/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved })
+      });
+      renderMultiAppWorkflow(await response.json().catch(() => ({})));
+    }
+
+    document.getElementById("ma-on").addEventListener("click", () => setMultiAppPermission(true));
+    document.getElementById("ma-off").addEventListener("click", () => setMultiAppPermission(false));
+    document.getElementById("ma-add").addEventListener("click", () => {
+      if (multiAppDraft.length >= 6) return;
+      const capability = document.getElementById("ma-capability").value;
+      const action = document.getElementById("ma-action").value;
+      const windowId = document.getElementById("ma-window").value.trim();
+      const elementId = document.getElementById("ma-element").value.trim();
+      const text = document.getElementById("ma-text").value.trim();
+      const step = { capability };
+      if (capability === "desktop_engine") {
+        const allowed = ["observe", "focus_window", "type_text", "click_element", "key_shortcut"];
+        step.action = allowed.includes(action) ? action : "observe";
+        if (windowId) step.window_id = windowId;
+        if (elementId) step.element_id = elementId;
+        if (text) step.text = text;
+        if (step.action === "key_shortcut") step.shortcut = "ctrl+a";
+      } else if (capability === "browser_workflow") {
+        const allowed = ["observe", "click", "focus", "type", "select_all"];
+        step.action = allowed.includes(action) ? action : "observe";
+        if (elementId) step.element_id = elementId;
+        if (text) step.text = text;
+      }
+      multiAppDraft.push(step);
+      loadMultiAppWorkflow();
+    });
+    document.getElementById("ma-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!multiAppDraft.length) return;
+      const response = await fetch("/api/workflow/multi-app/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ steps: multiAppDraft })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (data.run) multiAppDraft = [];
+      renderMultiAppWorkflow(data);
+    });
+    document.getElementById("ma-cancel").addEventListener("click", async () => {
+      const response = await fetch("/api/workflow/multi-app/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderMultiAppWorkflow(await response.json().catch(() => ({})));
+    });
+    document.getElementById("ma-clear").addEventListener("click", async () => {
+      multiAppDraft = [];
+      const response = await fetch("/api/workflow/multi-app/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      renderMultiAppWorkflow(await response.json().catch(() => ({})));
+    });
+
+    function clearIntegrations() {
+      const status = document.getElementById("int-status");
+      const gmailPermission = document.getElementById("gmail-permission");
+      const calPermission = document.getElementById("cal-permission");
+      const gmailPending = document.getElementById("gmail-pending");
+      const gmailActions = document.getElementById("gmail-actions");
+      const gmailResult = document.getElementById("gmail-result");
+      const calPending = document.getElementById("cal-pending");
+      const calActions = document.getElementById("cal-actions");
+      const calResult = document.getElementById("cal-result");
+      if (status) status.textContent = "Google account is not connected.";
+      if (gmailPermission) gmailPermission.textContent = "Gmail read is off.";
+      if (calPermission) calPermission.textContent = "Calendar read is off.";
+      if (gmailPending) gmailPending.replaceChildren();
+      if (gmailActions) gmailActions.replaceChildren();
+      if (gmailResult) gmailResult.textContent = "";
+      if (calPending) calPending.replaceChildren();
+      if (calActions) calActions.replaceChildren();
+      if (calResult) calResult.textContent = "";
+    }
+
+    function renderIntegrations(data) {
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearIntegrations();
+        return;
+      }
+      const status = document.getElementById("int-status");
+      const gmailPermission = document.getElementById("gmail-permission");
+      const calPermission = document.getElementById("cal-permission");
+      const gmailPending = document.getElementById("gmail-pending");
+      const gmailActions = document.getElementById("gmail-actions");
+      const gmailResult = document.getElementById("gmail-result");
+      const calPending = document.getElementById("cal-pending");
+      const calActions = document.getElementById("cal-actions");
+      const calResult = document.getElementById("cal-result");
+      if (!status || !gmailPermission || !calPermission) return;
+      status.textContent = data.text || (data.connected ? "Google account connected." : "Google account is not connected.");
+      const gmail = data.gmail || {};
+      const calendar = data.calendar || {};
+      gmailPermission.textContent = gmail.permission_enabled ? "Gmail read is on." : "Gmail read is off.";
+      calPermission.textContent = calendar.permission_enabled ? "Calendar read is on." : "Calendar read is off.";
+      gmailPending.replaceChildren();
+      gmailActions.replaceChildren();
+      calPending.replaceChildren();
+      calActions.replaceChildren();
+      if (gmail.pending && gmail.pending.action_id) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = gmail.pending.summary || "Gmail action waiting";
+        gmailPending.appendChild(row);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve Gmail";
+        approve.addEventListener("click", () => confirmGmail(gmail.pending.action_id, true));
+        gmailActions.appendChild(approve);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny Gmail";
+        deny.addEventListener("click", () => confirmGmail(gmail.pending.action_id, false));
+        gmailActions.appendChild(deny);
+      }
+      if (calendar.pending && calendar.pending.action_id) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = calendar.pending.summary || "Calendar action waiting";
+        calPending.appendChild(row);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve Calendar";
+        approve.addEventListener("click", () => confirmCalendar(calendar.pending.action_id, true));
+        calActions.appendChild(approve);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny Calendar";
+        deny.addEventListener("click", () => confirmCalendar(calendar.pending.action_id, false));
+        calActions.appendChild(deny);
+      }
+      gmailResult.textContent = gmail.result ? JSON.stringify(gmail.result, null, 2) : (gmail.text || "");
+      calResult.textContent = calendar.result ? JSON.stringify(calendar.result, null, 2) : (calendar.text || "");
+    }
+
+    async function loadIntegrations() {
+      const response = await fetch("/api/integrations");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        clearIntegrations();
+        return;
+      }
+      renderIntegrations(data);
+    }
+
+    async function confirmGmail(actionId, approved) {
+      const response = await fetch("/api/integrations/gmail/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved })
+      });
+      await loadIntegrations();
+      void response;
+    }
+
+    async function confirmCalendar(actionId, approved) {
+      const response = await fetch("/api/integrations/calendar/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action_id: actionId, approved })
+      });
+      await loadIntegrations();
+      void response;
+    }
+
+    document.getElementById("int-connect").addEventListener("click", async () => {
+      const response = await fetch("/api/integrations/google/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await response.json().catch(() => ({}));
+      if (data.auth_url) {
+        window.location.href = data.auth_url;
+        return;
+      }
+      await loadIntegrations();
+    });
+    document.getElementById("int-disconnect").addEventListener("click", async () => {
+      await fetch("/api/integrations/google/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      await loadIntegrations();
+    });
+    document.getElementById("gmail-on").addEventListener("click", async () => {
+      await fetch("/api/integrations/gmail/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true })
+      });
+      await loadIntegrations();
+    });
+    document.getElementById("gmail-off").addEventListener("click", async () => {
+      await fetch("/api/integrations/gmail/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false })
+      });
+      await loadIntegrations();
+    });
+    document.getElementById("cal-on").addEventListener("click", async () => {
+      await fetch("/api/integrations/calendar/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true })
+      });
+      await loadIntegrations();
+    });
+    document.getElementById("cal-off").addEventListener("click", async () => {
+      await fetch("/api/integrations/calendar/permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false })
+      });
+      await loadIntegrations();
+    });
+    document.getElementById("gmail-search-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const query = document.getElementById("gmail-query").value.trim();
+      if (!query) return;
+      await fetch("/api/integrations/gmail/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+      });
+      await loadIntegrations();
+    });
+    document.getElementById("gmail-message-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const messageId = document.getElementById("gmail-message-id").value.trim();
+      if (!messageId) return;
+      await fetch("/api/integrations/gmail/message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_id: messageId })
+      });
+      await loadIntegrations();
+    });
+    document.getElementById("cal-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const days = Number(document.getElementById("cal-days").value || 7);
+      await fetch("/api/integrations/calendar/upcoming", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days })
+      });
+      await loadIntegrations();
+    });
+    document.getElementById("gmail-clear").addEventListener("click", async () => {
+      await fetch("/api/integrations/gmail/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      await loadIntegrations();
+    });
+    document.getElementById("cal-clear").addEventListener("click", async () => {
+      await fetch("/api/integrations/calendar/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      await loadIntegrations();
+    });
+
+    function clearReminders() {
+      const permission = document.getElementById("rem-permission");
+      const status = document.getElementById("rem-status");
+      const pending = document.getElementById("rem-pending");
+      const actions = document.getElementById("rem-actions");
+      const upcoming = document.getElementById("rem-upcoming");
+      const overdue = document.getElementById("rem-overdue");
+      const notes = document.getElementById("rem-notifications");
+      if (permission) permission.textContent = "Tasks and reminders are off.";
+      if (status) status.textContent = "";
+      if (pending) pending.replaceChildren();
+      if (actions) actions.replaceChildren();
+      if (upcoming) upcoming.replaceChildren();
+      if (overdue) overdue.replaceChildren();
+      if (notes) notes.replaceChildren();
+    }
+
+    function renderReminderList(target, rows, withControls) {
+      target.replaceChildren();
+      (rows || []).forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        const missed = row.missed ? " · missed" : "";
+        item.textContent = row.title + " · " + row.due_at + " · " + row.status + " · " + row.recurrence + missed + " · " + row.timezone;
+        target.appendChild(item);
+        if (!withControls) return;
+        const controls = document.createElement("div");
+        controls.className = "voice-controls";
+        const complete = document.createElement("button");
+        complete.type = "button";
+        complete.textContent = "Complete";
+        complete.addEventListener("click", () => reminderAction("/api/reminders/complete", { reminder_id: row.id }));
+        controls.appendChild(complete);
+        ["5m", "15m", "1h", "1d"].forEach((duration) => {
+          const snooze = document.createElement("button");
+          snooze.type = "button";
+          snooze.textContent = "Snooze " + duration;
+          snooze.addEventListener("click", () => reminderAction("/api/reminders/snooze", { reminder_id: row.id, duration }));
+          controls.appendChild(snooze);
+        });
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.textContent = "Cancel";
+        cancel.addEventListener("click", () => reminderAction("/api/reminders/cancel", { reminder_id: row.id }));
+        controls.appendChild(cancel);
+        target.appendChild(controls);
+      });
+    }
+
+    function renderReminders(data) {
+      if (!data || lastStatus === "stopped" || stopRequestedAt !== null) {
+        clearReminders();
+        return;
+      }
+      const permission = document.getElementById("rem-permission");
+      const status = document.getElementById("rem-status");
+      const pending = document.getElementById("rem-pending");
+      const actions = document.getElementById("rem-actions");
+      const upcoming = document.getElementById("rem-upcoming");
+      const overdue = document.getElementById("rem-overdue");
+      const notes = document.getElementById("rem-notifications");
+      if (!permission || !status || !pending || !actions || !upcoming || !overdue || !notes) return;
+      permission.textContent = data.permission_enabled ? "Tasks and reminders are on." : "Tasks and reminders are off.";
+      status.textContent = (data.text || "") + (data.suspended ? " Delivery suspended." : "") + " Timezone: " + (data.timezone || "UTC");
+      pending.replaceChildren();
+      actions.replaceChildren();
+      if (data.pending && data.pending.action_id) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = data.pending.summary || "Reminder change waiting";
+        pending.appendChild(row);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Approve change";
+        approve.addEventListener("click", () => confirmReminder(data.pending.action_id, true));
+        actions.appendChild(approve);
+        const deny = document.createElement("button");
+        deny.type = "button";
+        deny.textContent = "Deny change";
+        deny.addEventListener("click", () => confirmReminder(data.pending.action_id, false));
+        actions.appendChild(deny);
+      }
+      renderReminderList(upcoming, data.upcoming || [], true);
+      renderReminderList(overdue, data.overdue || [], true);
+      notes.replaceChildren();
+      (data.notifications || []).forEach((note) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        item.textContent = note.kind + " · " + note.title + " · " + note.due_at;
+        notes.appendChild(item);
+      });
+    }
+
+    async function loadReminders() {
+      const response = await fetch("/api/reminders");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        clearReminders();
+        return;
+      }
+      renderReminders(data);
+    }
+
+    async function reminderAction(path, body) {
+      await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      await loadReminders();
+    }
+
+    async function confirmReminder(actionId, approved) {
+      await reminderAction("/api/reminders/confirm", { action_id: actionId, approved });
+    }
+
+    document.getElementById("rem-on").addEventListener("click", async () => {
+      await reminderAction("/api/reminders/permission", { enabled: true });
+    });
+    document.getElementById("rem-off").addEventListener("click", async () => {
+      await reminderAction("/api/reminders/permission", { enabled: false });
+    });
+    document.getElementById("rem-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const title = document.getElementById("rem-title").value.trim();
+      const notes = document.getElementById("rem-notes").value.trim();
+      const due = document.getElementById("rem-due").value;
+      const timezone = document.getElementById("rem-tz").value.trim() || "UTC";
+      const recurrence = document.getElementById("rem-recurrence").value;
+      const until = document.getElementById("rem-until").value;
+      if (!title || !due) return;
+      const body = { title, notes, due_at: due, timezone, recurrence };
+      if (recurrence !== "none" && until) body.recurrence_until = until;
+      await reminderAction("/api/reminders/create", body);
+    });
+
+    function clearRecovery() {
+      document.getElementById("rec-status").textContent = "";
+      document.getElementById("rec-list").replaceChildren();
+    }
+
+    function renderRecovery(data) {
+      const status = document.getElementById("rec-status");
+      const list = document.getElementById("rec-list");
+      status.textContent = data.text || "";
+      list.replaceChildren();
+      const rows = []
+        .concat(data.interrupted || [])
+        .concat(data.active || []);
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "row";
+        empty.textContent = "No interrupted workflows.";
+        list.appendChild(empty);
+        return;
+      }
+      rows.forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "row";
+        const label = document.createElement("div");
+        label.textContent =
+          row.kind +
+          " · " +
+          row.recovery_status +
+          " · step " +
+          row.step_index +
+          "/" +
+          row.step_count +
+          " · " +
+          (row.summary || "");
+        item.appendChild(label);
+        const controls = document.createElement("div");
+        controls.className = "voice-controls";
+        const abandon = document.createElement("button");
+        abandon.type = "button";
+        abandon.textContent = "Abandon";
+        abandon.addEventListener("click", () => recoveryAction("/api/recovery/abandon", row.checkpoint_id));
+        controls.appendChild(abandon);
+        if (row.can_restart && (row.recovery_status === "interrupted" || row.recovery_status === "needs_review")) {
+          const restart = document.createElement("button");
+          restart.type = "button";
+          restart.textContent = "Restart from beginning";
+          restart.addEventListener("click", () => recoveryAction("/api/recovery/restart", row.checkpoint_id));
+          controls.appendChild(restart);
+        }
+        item.appendChild(controls);
+        list.appendChild(item);
+      });
+    }
+
+    async function loadRecovery() {
+      const response = await fetch("/api/recovery");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        clearRecovery();
+        return;
+      }
+      renderRecovery(data);
+    }
+
+    async function recoveryAction(path, checkpointId) {
+      await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ checkpoint_id: checkpointId })
+      });
+      await loadRecovery();
+      await loadGoal();
+      await loadMultiAppWorkflow();
+      await loadBrowserWorkflow();
+    }
 
     document.getElementById("simulator-approve").addEventListener("click", () => decideSimulator(true));
     document.getElementById("simulator-deny").addEventListener("click", () => decideSimulator(false));

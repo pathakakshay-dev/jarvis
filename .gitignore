@@ -4,5 +4,25 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .env
+.env.*
+!.env.example
 data/
 workspace/
+
+# Runtime / local secrets (defense in depth; primary store is data/)
+*.sqlite3
+*.sqlite3-*
+*.db
+*.log
+audit.jsonl
+client_secret*.json
+credentials.json
+token.json
+*.tokens.dpapi
+*.dpapi
+*.pem
+*.key
+*.p12
+*.pfx
+Thumbs.db
+.DS_Store
