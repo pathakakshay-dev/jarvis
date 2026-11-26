@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from jarvis.config import Settings
@@ -176,6 +178,7 @@ def test_oauth_state_forged_callback_and_auth_failure(tmp_path: Path):
         assert state not in json.dumps(client.get("/api/integrations").json())
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="DPAPI token round-trip is Windows-only")
 def test_token_storage_disconnect_permissions_and_fetch(tmp_path: Path):
     mock = MockGoogle()
     app = create_app(
